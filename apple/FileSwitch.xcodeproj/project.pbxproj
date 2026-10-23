@@ -1,0 +1,478 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		07762C63BB5CE61288E412EA /* HTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 087B1E8461B5A3B904BF1B71 /* HTTP.swift */; };
+		087975A4ABC3D30F1D9A4A48 /* Backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58EA480D7FBCCC87182010B /* Backend.swift */; };
+		0CFA01839F99F7258B589B15 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5706DBA5970C2363948834C0 /* ConnectView.swift */; };
+		17E8AFFB474FB5C80F487456 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A078D25F26125066DA6451EA /* Models.swift */; };
+		1E7015B3D46CA8B1AD33DCCE /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5706DBA5970C2363948834C0 /* ConnectView.swift */; };
+		246EC374E93286BB0248DDD7 /* Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73DF0B67971079DBF031DE46 /* Crypto.swift */; };
+		298C2D41BDB959C9D8DB1F2A /* Transfers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8EE2D718610B6F6B2D5412 /* Transfers.swift */; };
+		2C66EB4C68BE6D58DF08E539 /* Pages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84FD5B5243A41C070119A8B /* Pages.swift */; };
+		2F6BE015EC0E0CCDA2845269 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C96BC8B7E68A7F875AFDA53 /* SettingsView.swift */; };
+		3C1F41818DFB0DCD76FB7E1C /* RelayBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376D0024A5BC19D0E7B31564 /* RelayBackend.swift */; };
+		3D27475807B4629941FB14A1 /* Transfers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8EE2D718610B6F6B2D5412 /* Transfers.swift */; };
+		3E650EDDBEEFB3029F580191 /* FileSwitchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B073214AC2E44E547687DBF4 /* FileSwitchApp.swift */; };
+		44A133E10F78AB383E0FA698 /* Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4355E85782734B306DAD8D4B /* Actions.swift */; };
+		4DE471D8D22909887867520A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E869E8F9BE66FE56B4BF93A /* MainView.swift */; };
+		5426739BC2F86502FB64703F /* Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4355E85782734B306DAD8D4B /* Actions.swift */; };
+		58DC19C206EE4B41B5FC17CF /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DEE5891D1CAE47B188EA897 /* Store.swift */; };
+		5E7E64AB80FD352AEEC1BB0B /* DemoHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD492DD4FB20D068489CF53E /* DemoHooks.swift */; };
+		5F2021B2FA9F8E5CF0905FC9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B803FE7041106A3DC19C1C14 /* Assets.xcassets */; };
+		61120E32D666EFA02CF5D9B8 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 995474ACB8D38E2904AA9F51 /* FilesView.swift */; };
+		643F6E0AF22612AB2BB2C2C7 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 8EA90B283CE2204BE8D0001C /* README.md */; };
+		80F5D7CCB546FCEE86C59504 /* RelayBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376D0024A5BC19D0E7B31564 /* RelayBackend.swift */; };
+		85675ED5861DE8F2953808C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B803FE7041106A3DC19C1C14 /* Assets.xcassets */; };
+		8B37D7952E0ED36DC9DF0011 /* FileSwitchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B073214AC2E44E547687DBF4 /* FileSwitchApp.swift */; };
+		8F25C14AB9DF426C0FC191E3 /* E2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F711EF3AD671C2E6793DFF /* E2E.swift */; };
+		901D85985AAAD46FE6871612 /* E2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F711EF3AD671C2E6793DFF /* E2E.swift */; };
+		9D02BF136D750FD1F3A9C11E /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44971B217867F23606C80577 /* AppModel.swift */; };
+		A11EC239C7E83FCCD6FA6E2D /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DEE5891D1CAE47B188EA897 /* Store.swift */; };
+		A3A7AB5F5103E497E1ED9925 /* Backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58EA480D7FBCCC87182010B /* Backend.swift */; };
+		ABFA4E5ACC1093D35ACC9349 /* DemoHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD492DD4FB20D068489CF53E /* DemoHooks.swift */; };
+		B0B5C943EF9465A4B2C563B6 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E869E8F9BE66FE56B4BF93A /* MainView.swift */; };
+		B3F4D6430E9431C4D00EB8F8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B0E635AAF52B440908D2EE /* Components.swift */; };
+		B5913E9821D79B661075D547 /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F5DC022E740A258287CD00 /* StatusBar.swift */; };
+		B9B2773E5E4C7440BB20A7A2 /* Crypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73DF0B67971079DBF031DE46 /* Crypto.swift */; };
+		C05C03C366EF8BB67DD286EC /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44971B217867F23606C80577 /* AppModel.swift */; };
+		D386F9438C4259B18805C266 /* HTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 087B1E8461B5A3B904BF1B71 /* HTTP.swift */; };
+		D8A3D42BDE65F5FBF353F05E /* Pages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84FD5B5243A41C070119A8B /* Pages.swift */; };
+		DEF70E25367094DCE25A5405 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C96BC8B7E68A7F875AFDA53 /* SettingsView.swift */; };
+		EEDE08E80A8AC15CE2CE73A0 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 995474ACB8D38E2904AA9F51 /* FilesView.swift */; };
+		F29FFED32F9DFC8697AA4491 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B0E635AAF52B440908D2EE /* Components.swift */; };
+		F5A5053E01DEC527729276C6 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A078D25F26125066DA6451EA /* Models.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		087B1E8461B5A3B904BF1B71 /* HTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTP.swift; sourceTree = "<group>"; };
+		0C96BC8B7E68A7F875AFDA53 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1CE25CE5720DAD159073B3C7 /* FileSwitch-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FileSwitch-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		2DB75FABE913F06CCD640308 /* FileSwitch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FileSwitch.entitlements; sourceTree = "<group>"; };
+		2DEE5891D1CAE47B188EA897 /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
+		34A2919766C317C1DCEB962C /* FileSwitch-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "FileSwitch-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		376D0024A5BC19D0E7B31564 /* RelayBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBackend.swift; sourceTree = "<group>"; };
+		4355E85782734B306DAD8D4B /* Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Actions.swift; sourceTree = "<group>"; };
+		43F5DC022E740A258287CD00 /* StatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar.swift; sourceTree = "<group>"; };
+		44971B217867F23606C80577 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		5706DBA5970C2363948834C0 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
+		5E10C9941A4E09E7047DE537 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6B8EE2D718610B6F6B2D5412 /* Transfers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transfers.swift; sourceTree = "<group>"; };
+		6E869E8F9BE66FE56B4BF93A /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		73DF0B67971079DBF031DE46 /* Crypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
+		8EA90B283CE2204BE8D0001C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		995474ACB8D38E2904AA9F51 /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
+		A078D25F26125066DA6451EA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A58EA480D7FBCCC87182010B /* Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend.swift; sourceTree = "<group>"; };
+		B073214AC2E44E547687DBF4 /* FileSwitchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSwitchApp.swift; sourceTree = "<group>"; };
+		B803FE7041106A3DC19C1C14 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C0F711EF3AD671C2E6793DFF /* E2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2E.swift; sourceTree = "<group>"; };
+		C5B0E635AAF52B440908D2EE /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		CD492DD4FB20D068489CF53E /* DemoHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHooks.swift; sourceTree = "<group>"; };
+		D84FD5B5243A41C070119A8B /* Pages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pages.swift; sourceTree = "<group>"; };
+		F5B99177090753E50EAD221B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		137AAEFD0963F7BE2D294048 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				4355E85782734B306DAD8D4B /* Actions.swift */,
+				C5B0E635AAF52B440908D2EE /* Components.swift */,
+				5706DBA5970C2363948834C0 /* ConnectView.swift */,
+				995474ACB8D38E2904AA9F51 /* FilesView.swift */,
+				6E869E8F9BE66FE56B4BF93A /* MainView.swift */,
+				D84FD5B5243A41C070119A8B /* Pages.swift */,
+				0C96BC8B7E68A7F875AFDA53 /* SettingsView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		2EAE009AF7FAA05521804586 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				44971B217867F23606C80577 /* AppModel.swift */,
+				A58EA480D7FBCCC87182010B /* Backend.swift */,
+				73DF0B67971079DBF031DE46 /* Crypto.swift */,
+				C0F711EF3AD671C2E6793DFF /* E2E.swift */,
+				087B1E8461B5A3B904BF1B71 /* HTTP.swift */,
+				A078D25F26125066DA6451EA /* Models.swift */,
+				376D0024A5BC19D0E7B31564 /* RelayBackend.swift */,
+				2DEE5891D1CAE47B188EA897 /* Store.swift */,
+				6B8EE2D718610B6F6B2D5412 /* Transfers.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		570700483DB12C85B80BF80A /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F5B99177090753E50EAD221B /* Info.plist */,
+				8EA90B283CE2204BE8D0001C /* README.md */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		641AAB84019A7584BEB82E36 /* macOS */ = {
+			isa = PBXGroup;
+			children = (
+				2DB75FABE913F06CCD640308 /* FileSwitch.entitlements */,
+				5E10C9941A4E09E7047DE537 /* Info.plist */,
+				43F5DC022E740A258287CD00 /* StatusBar.swift */,
+			);
+			path = macOS;
+			sourceTree = "<group>";
+		};
+		6FC4BA65A25731FBDCB854D5 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B803FE7041106A3DC19C1C14 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		88EE556C9B48534CEE146259 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				FC1A6F2E1545306CA68B7DD2 /* App */,
+				2EAE009AF7FAA05521804586 /* Core */,
+				137AAEFD0963F7BE2D294048 /* UI */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		BC793B96428B379A89D65596 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				34A2919766C317C1DCEB962C /* FileSwitch-iOS.app */,
+				1CE25CE5720DAD159073B3C7 /* FileSwitch-macOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C345EDE7397FA67FC3B0D6E5 = {
+			isa = PBXGroup;
+			children = (
+				570700483DB12C85B80BF80A /* iOS */,
+				641AAB84019A7584BEB82E36 /* macOS */,
+				6FC4BA65A25731FBDCB854D5 /* Resources */,
+				88EE556C9B48534CEE146259 /* Shared */,
+				BC793B96428B379A89D65596 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FC1A6F2E1545306CA68B7DD2 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				CD492DD4FB20D068489CF53E /* DemoHooks.swift */,
+				B073214AC2E44E547687DBF4 /* FileSwitchApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		66168DD02D86078F8C010994 /* FileSwitch-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BAED6EAF41B65517885BBC6A /* Build configuration list for PBXNativeTarget "FileSwitch-iOS" */;
+			buildPhases = (
+				14106DD34916EB7D097F7826 /* Sources */,
+				6637679273E3E3520677C4EB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "FileSwitch-iOS";
+			packageProductDependencies = (
+			);
+			productName = "FileSwitch-iOS";
+			productReference = 34A2919766C317C1DCEB962C /* FileSwitch-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CBA749257679E752B00F265C /* FileSwitch-macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 131B9A7E4CB6B07C45D91AFA /* Build configuration list for PBXNativeTarget "FileSwitch-macOS" */;
+			buildPhases = (
+				0AAD8C381CDE6E3EDB77133C /* Sources */,
+				8B70CFC3406EE9F25394FFD7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "FileSwitch-macOS";
+			packageProductDependencies = (
+			);
+			productName = "FileSwitch-macOS";
+			productReference = 1CE25CE5720DAD159073B3C7 /* FileSwitch-macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		462832009CC5D3F887AA2AD0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					66168DD02D86078F8C010994 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					CBA749257679E752B00F265C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = E907DF57F22622585C807DFC /* Build configuration list for PBXProject "FileSwitch" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C345EDE7397FA67FC3B0D6E5;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = BC793B96428B379A89D65596 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CBA749257679E752B00F265C /* FileSwitch-macOS */,
+				66168DD02D86078F8C010994 /* FileSwitch-iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6637679273E3E3520677C4EB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5F2021B2FA9F8E5CF0905FC9 /* Assets.xcassets in Resources */,
+				643F6E0AF22612AB2BB2C2C7 /* README.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B70CFC3406EE9F25394FFD7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				85675ED5861DE8F2953808C7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0AAD8C381CDE6E3EDB77133C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5426739BC2F86502FB64703F /* Actions.swift in Sources */,
+				9D02BF136D750FD1F3A9C11E /* AppModel.swift in Sources */,
+				087975A4ABC3D30F1D9A4A48 /* Backend.swift in Sources */,
+				F29FFED32F9DFC8697AA4491 /* Components.swift in Sources */,
+				1E7015B3D46CA8B1AD33DCCE /* ConnectView.swift in Sources */,
+				B9B2773E5E4C7440BB20A7A2 /* Crypto.swift in Sources */,
+				5E7E64AB80FD352AEEC1BB0B /* DemoHooks.swift in Sources */,
+				8F25C14AB9DF426C0FC191E3 /* E2E.swift in Sources */,
+				3E650EDDBEEFB3029F580191 /* FileSwitchApp.swift in Sources */,
+				EEDE08E80A8AC15CE2CE73A0 /* FilesView.swift in Sources */,
+				D386F9438C4259B18805C266 /* HTTP.swift in Sources */,
+				4DE471D8D22909887867520A /* MainView.swift in Sources */,
+				F5A5053E01DEC527729276C6 /* Models.swift in Sources */,
+				D8A3D42BDE65F5FBF353F05E /* Pages.swift in Sources */,
+				80F5D7CCB546FCEE86C59504 /* RelayBackend.swift in Sources */,
+				DEF70E25367094DCE25A5405 /* SettingsView.swift in Sources */,
+				B5913E9821D79B661075D547 /* StatusBar.swift in Sources */,
+				A11EC239C7E83FCCD6FA6E2D /* Store.swift in Sources */,
+				298C2D41BDB959C9D8DB1F2A /* Transfers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		14106DD34916EB7D097F7826 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				44A133E10F78AB383E0FA698 /* Actions.swift in Sources */,
+				C05C03C366EF8BB67DD286EC /* AppModel.swift in Sources */,
+				A3A7AB5F5103E497E1ED9925 /* Backend.swift in Sources */,
+				B3F4D6430E9431C4D00EB8F8 /* Components.swift in Sources */,
+				0CFA01839F99F7258B589B15 /* ConnectView.swift in Sources */,
+				246EC374E93286BB0248DDD7 /* Crypto.swift in Sources */,
+				ABFA4E5ACC1093D35ACC9349 /* DemoHooks.swift in Sources */,
+				901D85985AAAD46FE6871612 /* E2E.swift in Sources */,
+				8B37D7952E0ED36DC9DF0011 /* FileSwitchApp.swift in Sources */,
+				61120E32D666EFA02CF5D9B8 /* FilesView.swift in Sources */,
+				07762C63BB5CE61288E412EA /* HTTP.swift in Sources */,
+				B0B5C943EF9465A4B2C563B6 /* MainView.swift in Sources */,
+				17E8AFFB474FB5C80F487456 /* Models.swift in Sources */,
+				2C66EB4C68BE6D58DF08E539 /* Pages.swift in Sources */,
+				3C1F41818DFB0DCD76FB7E1C /* RelayBackend.swift in Sources */,
+				2F6BE015EC0E0CCDA2845269 /* SettingsView.swift in Sources */,
+				58DC19C206EE4B41B5FC17CF /* Store.swift in Sources */,
+				3D27475807B4629941FB14A1 /* Transfers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2A65ABB0B19B6DB3AA07B15F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6AC3877F2D1F54CA476E9933 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6D39DDB82C448873E0658FE5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = macOS/FileSwitch.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+			};
+			name = Release;
+		};
+		9FE8680F32C6581ACEFCED64 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.app;
+				PRODUCT_NAME = FileSwitch;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C3D7AE965D646463D1987E99 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = macOS/FileSwitch.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = macOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+			};
+			name = Debug;
+		};
+		CC639CF3F6753D6940A25117 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.1.0;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.app;
+				PRODUCT_NAME = FileSwitch;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		131B9A7E4CB6B07C45D91AFA /* Build configuration list for PBXNativeTarget "FileSwitch-macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C3D7AE965D646463D1987E99 /* Debug */,
+				6D39DDB82C448873E0658FE5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BAED6EAF41B65517885BBC6A /* Build configuration list for PBXNativeTarget "FileSwitch-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A65ABB0B19B6DB3AA07B15F /* Debug */,
+				6AC3877F2D1F54CA476E9933 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E907DF57F22622585C807DFC /* Build configuration list for PBXProject "FileSwitch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CC639CF3F6753D6940A25117 /* Debug */,
+				9FE8680F32C6581ACEFCED64 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 462832009CC5D3F887AA2AD0 /* Project object */;
+}

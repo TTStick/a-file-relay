@@ -20,7 +20,7 @@ import (
 	"fileswitch/internal/store"
 )
 
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 type Server struct {
 	cfg     *config.Config

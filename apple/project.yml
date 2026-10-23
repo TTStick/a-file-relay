@@ -1,0 +1,104 @@
+# Native FileSwitch for macOS 26 / iOS 26 (Liquid Glass).
+#   xcodegen generate   # regenerates FileSwitch.xcodeproj from this file
+name: FileSwitch
+options:
+  bundleIdPrefix: com.fileswitch
+  deploymentTarget:
+    macOS: "26.0"
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    PRODUCT_NAME: FileSwitch
+    PRODUCT_BUNDLE_IDENTIFIER: com.fileswitch.app
+    CLANG_ENABLE_OBJC_ARC: YES
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      SWIFT_OPTIMIZATION_LEVEL: -Onone
+      GCC_OPTIMIZATION_LEVEL: "0"
+      ONLY_ACTIVE_ARCH: YES
+      ENABLE_TESTABILITY: YES
+      DEBUG_INFORMATION_FORMAT: dwarf
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: -O
+      SWIFT_COMPILATION_MODE: wholemodule
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      VALIDATE_PRODUCT: YES
+targets:
+  FileSwitch-macOS:
+    type: application
+    platform: macOS
+    sources: [Shared, macOS, Resources]
+    info:
+      path: macOS/Info.plist
+      properties:
+        CFBundleDisplayName: FileSwitch
+        CFBundleName: FileSwitch
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # Self-signed NAS/relay certificates are pinned by SHA-256 in code (and
+        # CA certificates validated by the system); ATS can't express IP pins.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.fileswitch.pair
+            CFBundleURLSchemes: [fileswitch]
+    entitlements:
+      path: macOS/FileSwitch.entitlements
+      properties:
+        # Outside the App Store: the drop panel reads whatever is dropped on it.
+        com.apple.security.app-sandbox: false
+        com.apple.security.network.client: true
+    settings:
+      base:
+        SDKROOT: macosx
+        SUPPORTED_PLATFORMS: macosx
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: NO
+        COMBINE_HIDPI_IMAGES: YES
+  FileSwitch-iOS:
+    type: application
+    platform: iOS
+    sources: [Shared, iOS, Resources]
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: FileSwitch
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        # Self-signed NAS/relay certificates are pinned by SHA-256 in code (and
+        # CA certificates validated by the system); ATS can't express IP pins.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSLocalNetworkUsageDescription: FileSwitch 需要访问局域网，以连接你 NAS 上的交换站。
+        NSPhotoLibraryUsageDescription: 选择要上传到交换站的照片和视频。
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.fileswitch.pair
+            CFBundleURLSchemes: [fileswitch]
+    settings:
+      base:
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/Frameworks"]
+        CODE_SIGN_STYLE: Automatic

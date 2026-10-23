@@ -10,3 +10,10 @@ relay/relay-data/
 relay/caddy-data/
 
 .DS_Store
+
+# local deliverables (contain secrets)
+dist/
+
+# Xcode build output
+apple/build/
+xcuserdata/

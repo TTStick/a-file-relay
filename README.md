@@ -11,20 +11,22 @@
 
 <p align="center">
   <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8">
-  <img alt="Flutter" src="https://img.shields.io/badge/client-Flutter-02569B">
+  <img alt="SwiftUI" src="https://img.shields.io/badge/macOS%20%2F%20iOS-SwiftUI%20·%20Liquid%20Glass-F05138">
+  <img alt="Flutter" src="https://img.shields.io/badge/Android%20%2F%20Windows-Flutter-02569B">
   <img alt="Docker" src="https://img.shields.io/badge/deploy-Docker-2496ED">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Android%20%7C%20iOS-555">
   <img alt="E2E" src="https://img.shields.io/badge/relay-end--to--end%20encrypted-2EAD6B">
 </p>
 
 <p align="center">
-  <img src="docs/images/desktop-files.png" width="880" alt="桌面端：文件树、分类与文件列表">
+  <img src="docs/images/desktop-files.png" width="880" alt="macOS 原生客户端：文件树、分类与文件列表">
 </p>
 
 ## 它能做什么
 
 - **拖到菜单栏就上传**：macOS 上把文件或文件夹拖到右上角菜单栏图标附近，会弹出投递面板；面板上是你自己定义的分类，拖到某个分类上松手就开始上传。
 - **常驻托盘**：macOS 菜单栏、Windows 系统托盘常驻；Windows 另有贴在右下角的「迷你投递窗」。
+- **原生 Apple 客户端**：macOS 和 iOS 是 SwiftUI 原生应用，采用 macOS 26 / iOS 26 的 Liquid Glass 设计（悬浮的玻璃侧边栏、玻璃投递面板、可收起的玻璃标签栏）；Android 和 Windows 使用 Flutter 客户端。
 - **像共享文件夹一样管理**：文件树、面包屑、搜索、拖拽移动、多选、回收站；文件可以归类，也能按时间线回看每一次投递。
 - **私密、安全**：只开一个 HTTPS 端口；TLS 1.3 + 证书指纹固定；Argon2id 密码 + 每台设备独立令牌（可随时撤销）；文件在 NAS 磁盘上加密存储。
 - **出门也能用，但 NAS 不暴露到公网**（可选）：借一台有公网 IP 的服务器做中转站和缓存。NAS 不做端口映射，而是按自己的节奏**主动**去中转站取件；中转站上只有端到端加密的密文，被攻破也读不到任何东西。在家自动直连，出门自动走中转。
@@ -35,7 +37,7 @@
 
 <table>
   <tr>
-    <td width="36%" align="center"><img src="docs/images/drop-panel.png" width="320" alt="投递面板"><br><sub>拖动文件靠近菜单栏图标时自动弹出（原生 Swift 实现）</sub></td>
+    <td width="36%" align="center"><img src="docs/images/drop-panel.png" width="320" alt="投递面板"><br><sub>拖动文件靠近菜单栏图标时自动弹出的 Liquid Glass 面板</sub></td>
     <td align="center"><img src="docs/images/transfers.png" width="560" alt="传输列表"><br><sub>文件夹完整保留目录结构，大文件分块上传、断网续传</sub></td>
   </tr>
 </table>
@@ -49,7 +51,11 @@
   </tr>
 </table>
 
-### 手机端
+### 连接 · 手机端
+
+<p align="center">
+  <img src="docs/images/connect.png" width="720" alt="添加交换站">
+</p>
 
 <p align="center">
   <img src="docs/images/phone-files.png" width="230" alt="手机：文件">
@@ -58,7 +64,11 @@
   <img src="docs/images/phone-settings.png" width="230" alt="手机：设备与安全">
 </p>
 
+<p align="center"><sub>以上为 macOS / iOS 原生客户端。</sub></p>
+
 ### 出门在外：经中转站
+
+<sub>以下截图来自 Flutter 客户端（Android / Windows 使用），原生客户端的流程相同。</sub>
 
 <table>
   <tr>
@@ -75,10 +85,11 @@
 
 ```mermaid
 flowchart LR
-  subgraph Clients["客户端（Flutter）"]
-    mac["macOS<br/>菜单栏 + 投递面板"]
-    win["Windows<br/>托盘 + 迷你投递窗"]
-    phone["Android / iOS"]
+  subgraph Clients["客户端"]
+    mac["macOS（SwiftUI）<br/>菜单栏 + 投递面板"]
+    ios["iOS（SwiftUI）"]
+    win["Windows（Flutter）<br/>托盘 + 迷你投递窗"]
+    android["Android（Flutter）"]
   end
 
   subgraph VPS["公网服务器（可选）"]
@@ -285,6 +296,26 @@ docker exec fileswitch fileswitch export alice /data/export   # 解密导出某�
 
 ### 构建
 
+#### macOS / iOS 原生客户端（`apple/`）
+
+需要 Xcode 26+，最低系统为 macOS 26 / iOS 26。工程由 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 从 `apple/project.yml` 生成，生成好的 `FileSwitch.xcodeproj` 也一并提交了，可以直接打开。
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+```bash
+cd apple && xcodebuild -project FileSwitch.xcodeproj -scheme FileSwitch-macOS -configuration Release build
+```
+
+```bash
+xcodebuild -project FileSwitch.xcodeproj -scheme FileSwitch-iOS -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
+```
+
+iOS 真机需要在 Xcode 的 Signing & Capabilities 中选择开发团队。macOS 版默认是 ad-hoc 签名、未公证，首次打开请右键选择「打开」；正式分发时换成你的 Developer ID。详见 [apple/README.md](apple/README.md)。
+
+#### Android / Windows（Flutter，`client/`）
+
 需要 Flutter 3.47+（项目使用 Swift Package Manager，**不需要 CocoaPods**）。国内网络可先 `source scripts/env.sh` 使用镜像。
 
 ```bash
@@ -303,17 +334,9 @@ flutter build windows --release      # 在 Windows 上执行；build\windows\x64
 flutter build apk --release          # Android
 ```
 
-```bash
-flutter build ipa                    # iOS，需要在 Xcode 中配置签名团队
-```
+Flutter 工程同样能构建 macOS / iOS（`flutter build macos` / `flutter build ipa`），适合 macOS 26 以前的系统；在新系统上推荐使用原生客户端。
 
-macOS / iOS 构建前需让命令行工具指向完整的 Xcode（只需一次，需要管理员密码）：
-
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-```
-
-macOS 版本未启用 App Sandbox（投递面板需要直接读取被拖入的任意文件），适合 Developer ID 签名后在 App Store 之外分发。开机自启使用 `SMAppService`（macOS 13+）。
+macOS 版本未启用 App Sandbox（投递面板需要直接读取被拖入的任意文件），适合 Developer ID 签名后在 App Store 之外分发。开机自启使用 `SMAppService`。
 
 ## 开发与测试
 
@@ -321,9 +344,9 @@ macOS 版本未启用 App Sandbox（投递面板需要直接读取被拖入的�
 cd server && go test ./...
 ```
 
-覆盖加密存储（篡改/截断/错误密钥检测）、完整 API、登录限流，以及 NAS ↔ 中转站 ↔ 客户端三方协议（包括恶意中转站）。Go 与 Dart 的加密实现用同一组测试向量互相验证（`client/test/e2e_test.dart`）。
+覆盖加密存储（篡改/截断/错误密钥检测）、完整 API、登录限流，以及 NAS ↔ 中转站 ↔ 客户端三方协议（包括恶意中转站）。Go 与 Dart 的加密实现用同一组测试向量互相验证（`client/test/e2e_test.dart`）。原生客户端的 Swift 实现也用这组向量（`client/test/e2e_vectors.json`）核对过，双向互通。
 
-客户端端到端测试驱动真实的 App 对接真实的服务端，每一步都会截图（本文的截图就是这样生成的）：
+客户端端到端测试驱动真实的 App 对接真实的服务端，每一步都会截图（「经中转站」一节的截图就是这样生成的）：
 
 ```bash
 cd client && flutter test integration_test/app_test.dart -d macos --dart-define=FS_TEST_URL=127.0.0.1:8443 --dart-define=FS_TEST_PASS=你的密码 --dart-define=FS_SHOTS=/tmp/shots
@@ -336,6 +359,14 @@ cd client && flutter test integration_test/app_test.dart -d macos --dart-define=
 ```bash
 cd client && flutter test integration_test/relay_test.dart -d macos --dart-define="FS_PAIR_CODE=$(docker exec fileswitch fileswitch pair admin | grep '^fileswitch://')"
 ```
+
+原生客户端的自动化测试只在 Debug 构建中编译（`apple/Shared/App/DemoHooks.swift`），用环境变量驱动真实的 App：
+
+```bash
+open -n -g --env FS_DEMO_URL=127.0.0.1:8443 --env FS_DEMO_PASS=你的密码 --env FS_DEMO_FP=<指纹> --env FS_SELFTEST=/tmp/selftest.json apple/build/dd/Build/Products/Debug/FileSwitch.app
+```
+
+它会上传一个含子目录、空目录和 9 MB 文件的文件夹 → 校验目录树 → 下载回来逐字节比对 → 重命名 → 删除，然后把结果写进 JSON，并删除测试设备。改用 `FS_DEMO_PAIR=<配对码>` 就走中转站做同样的测试，加上 `FS_SHOTS=<目录>` 可以给每个页面截图（本文大部分截图就是这样生成的）。
 
 ### 目录结构
 
@@ -350,7 +381,11 @@ server/                         Go 服务端（单一二进制）
   internal/store/               SQLite：用户、设备、分类、文件树、回收站、上传会话、审计
   internal/auth/                Argon2id、设备令牌、登录限流
   internal/tlsutil/             自签证书与指纹
-client/                         Flutter 客户端
+apple/                          macOS / iOS 原生客户端（SwiftUI，Liquid Glass）
+  Shared/Core/                  直连与中转、端到端加密（与 Go 互通的 XChaCha20-Poly1305）、会话、传输队列
+  Shared/UI/                    共享界面
+  macOS/StatusBar.swift         菜单栏、全局拖拽检测、玻璃投递面板
+client/                         Flutter 客户端（Android / Windows）
   lib/core/                     局域网直连、中转客户端、端到端加密、会话状态、传输队列
   lib/platform/shell.dart       托盘、窗口、通知、开机启动、与 macOS 原生层通信
   lib/ui/                       各页面
@@ -386,6 +421,7 @@ docs/relay-protocol.md          中转协议与威胁模型
 
 ## 已知限制
 
+- 原生客户端需要 macOS 26 / iOS 26；更早的系统请使用 Flutter 版。
 - 手机端暂不支持从其他 App「分享到 FileSwitch」（需要 iOS Share Extension / Android 分享 Intent），也不支持 App 退到后台后继续上传。
 - iOS 上不能选择整个文件夹上传（系统限制），Android 可以。
 - Windows 版代码已就绪，但还没在 Windows 上构建验证；Windows 没有 macOS 那样的全局拖拽检测，用「迷你投递窗」代替；也尚未注册 `fileswitch://` 链接，配对时请粘贴配对码。
