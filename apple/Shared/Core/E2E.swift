@@ -1,3 +1,4 @@
+import Compression
 import CryptoKit
 import Foundation
 
@@ -172,18 +173,32 @@ enum E2E {
         return (version, try gunzip(z))
     }
 
-    /// Minimal gzip reader (header + raw DEFLATE + trailer).
-    static func gunzip(_ d: Data) throws -> Data {
+    /// Same cap the NAS uses when it opens snapshots; real ones are far smaller.
+    static let maxSnapshot = 256 << 20
+
+    /// Minimal gzip reader (header + raw DEFLATE + trailer). Stops as soon as
+    /// the output passes `limit` instead of inflating a bomb into memory.
+    static func gunzip(_ d: Data, limit: Int = maxSnapshot) throws -> Data {
         let b = [UInt8](d)
         guard b.count > 18, b[0] == 0x1f, b[1] == 0x8b, b[2] == 8 else { throw AuthError() }
         let flags = b[3]
         var p = 10
-        if flags & 4 != 0 { p += 2 + Int(b[p]) | Int(b[p + 1]) << 8 }
+        if flags & 4 != 0 {
+            guard p + 2 <= b.count else { throw AuthError() }
+            p += 2 + (Int(b[p]) | Int(b[p + 1]) << 8)
+        }
         if flags & 8 != 0 { while p < b.count && b[p] != 0 { p += 1 }; p += 1 }
         if flags & 16 != 0 { while p < b.count && b[p] != 0 { p += 1 }; p += 1 }
         if flags & 2 != 0 { p += 2 }
         guard p < b.count - 8 else { throw AuthError() }
-        let deflated = Data(b[p..<(b.count - 8)])
-        return try (deflated as NSData).decompressed(using: .zlib) as Data
+        var out = Data()
+        let inflate = try OutputFilter(.decompress, using: .zlib) { chunk in
+            guard let chunk else { return }
+            guard out.count + chunk.count <= limit else { throw AuthError() }
+            out.append(chunk)
+        }
+        try inflate.write(Data(b[p..<(b.count - 8)]))
+        try inflate.finalize()
+        return out
     }
 }

@@ -29,6 +29,7 @@ type Config struct {
 	AdminPass    string   // FS_ADMIN_PASSWORD (first start only)
 	TrashDays    int      // FS_TRASH_DAYS
 	MaxFileSize  int64    // FS_MAX_FILE_SIZE (bytes, 0 = unlimited)
+	UserQuota    int64    // FS_USER_QUOTA: per-user storage incl. trash, e.g. 500G (0 = unlimited)
 	TrustProxy   bool     // FS_TRUST_PROXY: take client IP from X-Forwarded-For
 
 	// LAN: serve the HTTPS API on the local network. Turn off for a NAS that
@@ -136,6 +137,7 @@ func Load() (*Config, error) {
 		{"FS_RELAY_CACHE_MAX_FILE", "256M", &c.CacheMaxFile},
 		{"FS_RELAY_CACHE_MAX_TOTAL", "4G", &c.CacheMaxTotal},
 		{"FS_REMOTE_MAX_FILE", "8G", &c.RemoteMaxFile},
+		{"FS_USER_QUOTA", "0", &c.UserQuota},
 	} {
 		if *x.dst, err = ParseSize(env(x.key, x.def)); err != nil {
 			return nil, fmt.Errorf("%s: %w", x.key, err)

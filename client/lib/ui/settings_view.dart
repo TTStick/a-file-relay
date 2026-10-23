@@ -184,6 +184,10 @@ class _SettingsViewState extends State<SettingsView> {
           ],
         ),
       );
+      // The code is a one-time key; don't leave it in the clipboard (or in
+      // clipboard history and sync) once the dialog is closed.
+      final clip = await Clipboard.getData(Clipboard.kTextPlain);
+      if (clip?.text == code) await Clipboard.setData(const ClipboardData(text: ''));
       _load();
     } catch (e) {
       if (mounted) showError(context, e);

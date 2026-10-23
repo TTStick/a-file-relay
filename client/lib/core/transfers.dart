@@ -439,7 +439,12 @@ class TransferManager extends ChangeNotifier {
           t.totalBytes = files.fold(0, (s, e) => s + e.node.size);
           String local(WalkEntry e) {
             final parts = e.relPath.split('/').skip(1).map(safeName).toList();
-            return parts.isEmpty ? root : p.joinAll([root, ...parts]);
+            final path = parts.isEmpty ? root : p.joinAll([root, ...parts]);
+            // safeName already rules this out; a second check costs nothing
+            if (path != root && !p.isWithin(root, p.normalize(path))) {
+              throw ApiException(0, 'bad_path', '服务器返回了无效的路径：${e.relPath}');
+            }
+            return path;
           }
 
           for (final e in entries.where((e) => e.node.isDir)) {
@@ -504,8 +509,11 @@ class TransferManager extends ChangeNotifier {
   }
 }
 
-/// Makes a server-side name safe for the local filesystem (mainly Windows).
+/// Makes a server-side name safe to use as one path component on this
+/// machine. The server never sends "." or "..", but a download must not be
+/// able to leave its folder even if it did.
 String safeName(String name) {
+  if (name == '.' || name == '..') return '_';
   var s = name.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_');
   if (Platform.isWindows) {
     s = s.replaceAll(RegExp(r'[. ]+$'), '');

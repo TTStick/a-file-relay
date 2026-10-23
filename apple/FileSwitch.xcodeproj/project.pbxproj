@@ -26,7 +26,7 @@
 		5E7E64AB80FD352AEEC1BB0B /* DemoHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD492DD4FB20D068489CF53E /* DemoHooks.swift */; };
 		5F2021B2FA9F8E5CF0905FC9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B803FE7041106A3DC19C1C14 /* Assets.xcassets */; };
 		61120E32D666EFA02CF5D9B8 /* FilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 995474ACB8D38E2904AA9F51 /* FilesView.swift */; };
-		643F6E0AF22612AB2BB2C2C7 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 8EA90B283CE2204BE8D0001C /* README.md */; };
+		80214384C4EDC06B417ECE72 /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB8708F7EBBDD9F6DCBA1A8 /* HardeningTests.swift */; };
 		80F5D7CCB546FCEE86C59504 /* RelayBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376D0024A5BC19D0E7B31564 /* RelayBackend.swift */; };
 		85675ED5861DE8F2953808C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B803FE7041106A3DC19C1C14 /* Assets.xcassets */; };
 		8B37D7952E0ED36DC9DF0011 /* FileSwitchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B073214AC2E44E547687DBF4 /* FileSwitchApp.swift */; };
@@ -49,6 +49,16 @@
 		F5A5053E01DEC527729276C6 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A078D25F26125066DA6451EA /* Models.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		22D533660FBB480504743F1A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 462832009CC5D3F887AA2AD0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CBA749257679E752B00F265C;
+			remoteInfo = "FileSwitch-macOS";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		087B1E8461B5A3B904BF1B71 /* HTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTP.swift; sourceTree = "<group>"; };
 		0C96BC8B7E68A7F875AFDA53 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -65,7 +75,7 @@
 		6B8EE2D718610B6F6B2D5412 /* Transfers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transfers.swift; sourceTree = "<group>"; };
 		6E869E8F9BE66FE56B4BF93A /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		73DF0B67971079DBF031DE46 /* Crypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
-		8EA90B283CE2204BE8D0001C /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		8FB8708F7EBBDD9F6DCBA1A8 /* HardeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
 		995474ACB8D38E2904AA9F51 /* FilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesView.swift; sourceTree = "<group>"; };
 		A078D25F26125066DA6451EA /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A58EA480D7FBCCC87182010B /* Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backend.swift; sourceTree = "<group>"; };
@@ -74,6 +84,7 @@
 		C0F711EF3AD671C2E6793DFF /* E2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2E.swift; sourceTree = "<group>"; };
 		C5B0E635AAF52B440908D2EE /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		CD492DD4FB20D068489CF53E /* DemoHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHooks.swift; sourceTree = "<group>"; };
+		D64B4C87B9360EA3E4EFDC1F /* FileSwitchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FileSwitchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D84FD5B5243A41C070119A8B /* Pages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pages.swift; sourceTree = "<group>"; };
 		F5B99177090753E50EAD221B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -113,7 +124,6 @@
 			isa = PBXGroup;
 			children = (
 				F5B99177090753E50EAD221B /* Info.plist */,
-				8EA90B283CE2204BE8D0001C /* README.md */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -151,6 +161,7 @@
 			children = (
 				34A2919766C317C1DCEB962C /* FileSwitch-iOS.app */,
 				1CE25CE5720DAD159073B3C7 /* FileSwitch-macOS.app */,
+				D64B4C87B9360EA3E4EFDC1F /* FileSwitchTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -162,8 +173,17 @@
 				641AAB84019A7584BEB82E36 /* macOS */,
 				6FC4BA65A25731FBDCB854D5 /* Resources */,
 				88EE556C9B48534CEE146259 /* Shared */,
+				DA406405FB59BB162FF8C7E3 /* Tests */,
 				BC793B96428B379A89D65596 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		DA406405FB59BB162FF8C7E3 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				8FB8708F7EBBDD9F6DCBA1A8 /* HardeningTests.swift */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 		FC1A6F2E1545306CA68B7DD2 /* App */ = {
@@ -178,6 +198,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		18925B04CD083F6A9625A949 /* FileSwitchTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD05441D732298CCCD7D9E0E /* Build configuration list for PBXNativeTarget "FileSwitchTests" */;
+			buildPhases = (
+				2C015FDEDB0210D34665E01A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CC9CD913BE31C416B8800AC1 /* PBXTargetDependency */,
+			);
+			name = FileSwitchTests;
+			packageProductDependencies = (
+			);
+			productName = FileSwitchTests;
+			productReference = D64B4C87B9360EA3E4EFDC1F /* FileSwitchTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		66168DD02D86078F8C010994 /* FileSwitch-iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BAED6EAF41B65517885BBC6A /* Build configuration list for PBXNativeTarget "FileSwitch-iOS" */;
@@ -223,6 +261,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					18925B04CD083F6A9625A949 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
 					66168DD02D86078F8C010994 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -249,6 +291,7 @@
 			targets = (
 				CBA749257679E752B00F265C /* FileSwitch-macOS */,
 				66168DD02D86078F8C010994 /* FileSwitch-iOS */,
+				18925B04CD083F6A9625A949 /* FileSwitchTests */,
 			);
 		};
 /* End PBXProject section */
@@ -259,7 +302,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F2021B2FA9F8E5CF0905FC9 /* Assets.xcassets in Resources */,
-				643F6E0AF22612AB2BB2C2C7 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -325,9 +367,40 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2C015FDEDB0210D34665E01A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				80214384C4EDC06B417ECE72 /* HardeningTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		CC9CD913BE31C416B8800AC1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CBA749257679E752B00F265C /* FileSwitch-macOS */;
+			targetProxy = 22D533660FBB480504743F1A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		1C2F0EFD2C78200D286990EC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.tests;
+				PRODUCT_NAME = FileSwitchTests;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FileSwitch.app/Contents/MacOS/FileSwitch";
+			};
+			name = Release;
+		};
 		2A65ABB0B19B6DB3AA07B15F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -384,13 +457,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.app;
 				PRODUCT_NAME = FileSwitch;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -399,6 +472,21 @@
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
+		};
+		B52C9E3B69E8976319E4ED79 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.tests;
+				PRODUCT_NAME = FileSwitchTests;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FileSwitch.app/Contents/MacOS/FileSwitch";
+			};
+			name = Debug;
 		};
 		C3D7AE965D646463D1987E99 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -424,7 +512,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_TESTABILITY = YES;
@@ -432,7 +520,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fileswitch.app;
 				PRODUCT_NAME = FileSwitch;
@@ -459,6 +547,15 @@
 			buildConfigurations = (
 				2A65ABB0B19B6DB3AA07B15F /* Debug */,
 				6AC3877F2D1F54CA476E9933 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BD05441D732298CCCD7D9E0E /* Build configuration list for PBXNativeTarget "FileSwitchTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B52C9E3B69E8976319E4ED79 /* Debug */,
+				1C2F0EFD2C78200D286990EC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

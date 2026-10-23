@@ -62,6 +62,25 @@ class CancelToken {
 String certFingerprint(X509Certificate cert) =>
     sha256.convert(cert.der).bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(':');
 
+/// An HttpClient that only talks to the server with this certificate.
+///
+/// badCertificateCallback only runs for certificates the platform rejects, so
+/// with the system roots loaded a CA-signed certificate for the same host
+/// would be accepted without ever looking at the pin. Without any trusted
+/// roots every certificate goes through the callback.
+HttpClient pinnedHttpClient(String? fingerprint, {void Function(String fp)? seen}) {
+  final c = HttpClient(context: fingerprint == null ? null : SecurityContext(withTrustedRoots: false));
+  final want = fingerprint == null ? null : _normFp(fingerprint);
+  c.badCertificateCallback = (cert, host, port) {
+    final fp = certFingerprint(cert);
+    seen?.call(fp);
+    return want != null && _normFp(fp) == want;
+  };
+  return c;
+}
+
+String _normFp(String s) => s.replaceAll(':', '').toUpperCase();
+
 /// Accepts "nas.local", "192.168.1.5:8443", "https://files.example.com/fs".
 /// Without a scheme we assume https on the default FileSwitch port 8443.
 Uri normalizeServerUrl(String input) {
@@ -71,7 +90,7 @@ Uri normalizeServerUrl(String input) {
   if (!hadScheme) s = 'https://$s';
   final u = Uri.tryParse(s);
   if (u == null || u.host.isEmpty) throw const FormatException('服务器地址格式不正确');
-  if (u.scheme != 'https' && u.scheme != 'http') throw const FormatException('只支持 https:// 地址');
+  if (u.scheme != 'https') throw const FormatException('只支持 https:// 地址（密码和令牌不能明文传输）');
   var path = u.path;
   while (path.endsWith('/')) {
     path = path.substring(0, path.length - 1);
@@ -87,22 +106,17 @@ class ProbeResult {
   final ServerInfo info;
 
   /// Fingerprint of a certificate the OS doesn't trust (self-signed); null when
-  /// the OS already trusts it or the connection is plain http.
+  /// the OS already trusts it.
   final String? fingerprint;
 }
 
 class ApiClient implements Backend {
   ApiClient({required this.base, this.fingerprint, this.token}) {
-    _http = HttpClient()
+    _http = pinnedHttpClient(fingerprint, seen: (fp) => _seenFingerprint = fp)
       ..connectionTimeout = const Duration(seconds: 10)
       ..idleTimeout = const Duration(seconds: 30)
       ..maxConnectionsPerHost = 8
       ..userAgent = 'FileSwitch/1.0';
-    _http.badCertificateCallback = (cert, host, port) {
-      final fp = certFingerprint(cert);
-      _seenFingerprint = fp;
-      return fingerprint != null && fp == fingerprint;
-    };
   }
 
   final Uri base;
@@ -654,6 +668,10 @@ class ApiClient implements Backend {
     }
     if (!await part.exists()) await part.create(recursive: true);
     if (await part.length() != n.size) throw ApiException(0, 'incomplete', '下载不完整');
+    if (n.sha256.isNotEmpty && (await sha256.bind(part.openRead()).first).toString() != n.sha256) {
+      await part.delete();
+      throw ApiException(0, 'corrupt', '下载的文件校验失败，请重试');
+    }
     await part.rename(target.path);
     try {
       await target.setLastModified(n.mtime);

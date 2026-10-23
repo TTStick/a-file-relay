@@ -81,8 +81,11 @@ final class DirectBackend: Backend, @unchecked Sendable {
         guard !s.isEmpty else { throw FSError(status: 0, code: "input", message: "请输入服务器地址") }
         let hadScheme = s.contains("://")
         if !hadScheme { s = "https://" + s }
-        guard var c = URLComponents(string: s), c.host?.isEmpty == false, ["https", "http"].contains(c.scheme ?? "") else {
+        guard var c = URLComponents(string: s), c.host?.isEmpty == false else {
             throw FSError(status: 0, code: "input", message: "服务器地址格式不正确")
+        }
+        guard c.scheme == "https" else {
+            throw FSError(status: 0, code: "input", message: "只支持 https:// 地址（密码和令牌不能明文传输）")
         }
         if !hadScheme && c.port == nil { c.port = 8443 }
         while c.path.hasSuffix("/") { c.path.removeLast() }
@@ -339,6 +342,10 @@ final class DirectBackend: Backend, @unchecked Sendable {
             }
         }
         if !FileManager.default.fileExists(atPath: part.path) { FileManager.default.createFile(atPath: part.path, contents: nil) }
+        if !n.sha256.isEmpty, try sha256Hex(file: part) != n.sha256 {
+            try? FileManager.default.removeItem(at: part)
+            throw FSError(status: 0, code: "corrupt", message: "下载的文件校验失败，请重试")
+        }
         try? FileManager.default.removeItem(at: to)
         try FileManager.default.moveItem(at: part, to: to)
         try? FileManager.default.setAttributes([.modificationDate: n.mtime], ofItemAtPath: to.path)

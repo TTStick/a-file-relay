@@ -37,12 +37,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := s.clientIP(r)
-	if wait := s.limiter.Allow(ip, req.Username); wait > 0 {
-		w.Header().Set("Retry-After", fmt.Sprint(int(math.Ceil(wait.Seconds()))))
-		s.writeErr(w, r, errf(http.StatusTooManyRequests, "throttled", "尝试次数过多，请 %d 秒后再试", int(math.Ceil(wait.Seconds()))))
+	uname := auth.NormalizeUsername(req.Username)
+	if wait := s.limiter.Allow(ip, uname); wait > 0 {
+		secs := int(math.Ceil(wait.Seconds()))
+		w.Header().Set("Retry-After", fmt.Sprint(secs))
+		later := fmt.Sprintf("%d 秒", secs)
+		if secs > 90 {
+			later = fmt.Sprintf("%d 分钟", (secs+59)/60)
+		}
+		s.writeErr(w, r, errf(http.StatusTooManyRequests, "throttled", "尝试次数过多，请 %s后再试", later))
 		return
 	}
-	user, err := s.db.UserByName(strings.TrimSpace(req.Username))
+	user, err := s.db.UserByName(uname)
 	hash := s.dummyHash
 	if err == nil {
 		hash = user.PasswordHash
@@ -51,15 +57,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !auth.VerifyPassword(hash, req.Password) || err != nil {
-		s.limiter.Fail(ip, req.Username)
+		s.limiter.Fail(ip, uname)
 		if user.ID != "" {
 			s.db.Audit(user.ID, "", "login_failed", "", ip)
 		}
-		s.log.Warn("login failed", "user", req.Username, "ip", ip)
+		s.log.Warn("login failed", "user", uname, "ip", ip)
 		s.writeErr(w, r, errf(http.StatusUnauthorized, "bad_credentials", "用户名或密码错误"))
 		return
 	}
-	s.limiter.Success(req.Username)
+	s.limiter.Success(ip, uname)
 	name := cleanLabel(req.DeviceName, 64)
 	if name == "" {
 		name = "未命名设备"
@@ -79,6 +85,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, a *Auth) e
 		return err
 	}
 	s.db.Audit(a.User.ID, a.Device.ID, "logout", a.Device.Name, s.clientIP(r))
+	s.kickRelay() // no event is published for this, so wake the agent ourselves
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }

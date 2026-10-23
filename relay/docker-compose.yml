@@ -20,13 +20,15 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
     volumes:
       - ./relay-data:/data
     environment:
       FS_TLS: "off"              # TLS 由 Caddy 负责；relay 端口只在内部网络可见
       FS_TRUST_PROXY: "true"
       FS_RELAY_NAS_TOKEN: ${FS_RELAY_NAS_TOKEN:?请在 .env 中设置}
-      FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}       # 每个用户在中转站最多暂存
+      FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}       # 每个交换空间（NAS 上每个用户一个）最多暂存
       FS_RELAY_MAX_FILE: ${FS_RELAY_MAX_FILE:-16G}
       FS_RELAY_CACHE_TTL: ${FS_RELAY_CACHE_TTL:-336h}
     expose:

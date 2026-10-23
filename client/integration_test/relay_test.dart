@@ -83,7 +83,8 @@ void main() {
     Nav.instance.go(Section.transfers);
     await settle(t, 1500);
     await shot(t, 'r03_uploading');
-    await waitFor(t, 'upload through relay', () => !TransferManager.instance.items.first.active, seconds: 120);
+    // generous: against a real relay this crosses the internet twice (us -> relay -> NAS)
+    await waitFor(t, 'upload through relay', () => !TransferManager.instance.items.first.active, seconds: 900);
     final up = TransferManager.instance.items.first;
     expect(up.status, TransferStatus.done, reason: up.error);
     expect(up.doneFiles, 2);

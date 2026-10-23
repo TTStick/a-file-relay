@@ -303,7 +303,10 @@ final class Transfers {
         #endif
     }
 
+    /// One path component that is safe on this machine. The server never sends
+    /// "." or "..", but a download must not leave its folder even if it did.
     nonisolated static func safeName(_ s: String) -> String {
+        if s == "." || s == ".." { return "_" }
         let bad = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.controlCharacters)
         let out = String(s.unicodeScalars.map { bad.contains($0) ? "_" : Character($0) })
         return out.isEmpty ? "_" : out
@@ -344,8 +347,14 @@ final class Transfers {
                     let top = Self.unique(root.appendingPathComponent(Self.safeName(n.name)))
                     t.localURL = top
                     t.phase = nil
-                    func local(_ e: WalkEntry) -> URL {
-                        e.relPath.split(separator: "/").dropFirst().reduce(top) { $0.appendingPathComponent(Self.safeName(String($1))) }
+                    func local(_ e: WalkEntry) throws -> URL {
+                        let u = e.relPath.split(separator: "/").dropFirst().reduce(top) { $0.appendingPathComponent(Self.safeName(String($1))) }
+                        // safeName already rules this out; a second check costs nothing
+                        let p = u.standardizedFileURL.path, root = top.standardizedFileURL.path
+                        guard p == root || p.hasPrefix(root + "/") else {
+                            throw FSError(status: 0, code: "bad_path", message: "服务器返回了无效的路径：\(e.relPath)")
+                        }
+                        return u
                     }
                     for e in entries where e.node.isDir { try FileManager.default.createDirectory(at: local(e), withIntermediateDirectories: true) }
                     let files = entries.filter { !$0.node.isDir }
@@ -355,7 +364,7 @@ final class Transfers {
                     var progress = [Int64](repeating: 0, count: files.count)
                     try await withThrowingTaskGroup(of: Void.self) { g in
                         for (i, e) in files.enumerated() {
-                            let target = local(e)
+                            let target = try local(e)
                             let prog = Throttle { [t] v in t.done += v - progress[i]; progress[i] = v; t.sample() }
                             g.addTask {
                                 do {

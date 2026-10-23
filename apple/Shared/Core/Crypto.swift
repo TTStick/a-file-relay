@@ -106,6 +106,14 @@ enum Base32 {
 
 func sha256Hex(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
 
+func sha256Hex(file: URL) throws -> String {
+    let h = try FileHandle(forReadingFrom: file)
+    defer { try? h.close() }
+    var hasher = SHA256()
+    while let chunk = try h.read(upToCount: 1 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+}
+
 /// Certificate fingerprint as AA:BB:… (matches the server log).
 func certFingerprint(_ der: Data) -> String {
     SHA256.hash(data: der).map { String(format: "%02X", $0) }.joined(separator: ":")

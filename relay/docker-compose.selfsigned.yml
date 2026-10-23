@@ -14,6 +14,8 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
     ports:
       - "8443:8443"
     volumes:
@@ -21,4 +23,4 @@ services:
     environment:
       FS_RELAY_NAS_TOKEN: ${FS_RELAY_NAS_TOKEN:?请在 .env 中设置}
       FS_TLS_HOSTS: ${FS_PUBLIC_IP:-}
-      FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}
+      FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}   # 每个交换空间（NAS 上每个用户一个）最多暂存

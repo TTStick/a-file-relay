@@ -31,18 +31,11 @@ class RelayCreds {
   void setKeyring(Map<String, dynamic> k) => json['keyring'] = k;
 }
 
-String _normFp(String s) => s.replaceAll(':', '').toUpperCase();
-
-HttpClient _pinnedClient(String? fingerprint) {
-  final c = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 15)
-    ..idleTimeout = const Duration(seconds: 30)
-    ..maxConnectionsPerHost = 6
-    ..userAgent = 'FileSwitch/1.0';
-  c.badCertificateCallback =
-      (cert, host, port) => fingerprint != null && _normFp(certFingerprint(cert)) == _normFp(fingerprint);
-  return c;
-}
+HttpClient _pinnedClient(String? fingerprint) => pinnedHttpClient(fingerprint)
+  ..connectionTimeout = const Duration(seconds: 15)
+  ..idleTimeout = const Duration(seconds: 30)
+  ..maxConnectionsPerHost = 6
+  ..userAgent = 'FileSwitch/1.0';
 
 ApiException _wrapNet(Object e) {
   if (e is ApiException) return e;
@@ -354,12 +347,15 @@ class RelayBackend with ChangeNotifier implements Backend {
       return;
     }
     final j = await _call('GET', '/r/v1/replies', query: {'after': '${max(_replySeq, 0)}'}) as Map;
-    for (final r in (j['replies'] as List).cast<Map>()) {
-      _replySeq = max(_replySeq, (r['seq'] as num).toInt());
-      final id = r['op'] as String;
+    for (final r in (j['replies'] as List).whereType<Map>()) {
+      final seq = r['seq'], id = r['op'];
+      if (seq is num) _replySeq = max(_replySeq, seq.toInt());
+      if (id is! String) continue;
       final c = _waiters.remove(id);
       _optimistic.remove(id);
       if (c == null) continue;
+      // Whatever is wrong with a reply, its waiter gets an answer now instead
+      // of hanging until the timeout.
       try {
         final p = await openEnvelope(creds.deviceKey, r['body'] as Map, replyAAD(creds.deviceId, id));
         final reply = (jsonDecode(utf8.decode(p)) as Map).cast<String, dynamic>();
@@ -368,7 +364,7 @@ class RelayBackend with ChangeNotifier implements Backend {
         } else {
           c.completeError(ApiException(400, 'nas', (reply['error'] as String?) ?? 'NAS 拒绝了该操作'));
         }
-      } on E2EAuthError {
+      } catch (_) {
         c.completeError(ApiException(0, 'auth', '收到无法验证的回复，已忽略'));
       }
     }

@@ -182,11 +182,13 @@ Future<Uint8List> _encryptRange(String path, int size, Uint8List fk, Uint8List h
 }
 
 /// Decrypts an FSE1 blob file into dst, verifying every segment and the
-/// SHA-256 recorded by the NAS. Runs in a background isolate.
+/// SHA-256 recorded by the NAS. Runs in a background isolate. On any failure
+/// dst is removed, so no unverified plaintext is left behind.
 Future<void> decryptFile(String src, String dst, int size, Keyring ring, String sha) {
   return Isolate.run(() async {
     final inp = File(src).openSync();
     final out = File(dst).openSync(mode: FileMode.write);
+    var ok = false;
     try {
       if (inp.lengthSync() != cipherSize(size)) throw E2EAuthError();
       final fk = await _unwrap(inp.readSync(headerSize), ring);
@@ -203,9 +205,11 @@ Future<void> decryptFile(String src, String dst, int size, Keyring ring, String 
       }
       hasher.close();
       if (sha.isNotEmpty && digest.value.toString() != sha) throw E2EAuthError();
+      ok = true;
     } finally {
       inp.closeSync();
       out.closeSync();
+      if (!ok) File(dst).deleteSync();
     }
   });
 }
@@ -243,7 +247,37 @@ Future<(int, Map<String, dynamic>)> openSnapshot(Uint8List data, String spaceId,
     if (sk == null) throw E2EAuthError();
     final aad = Uint8List.fromList([...utf8.encode('FSS1'), ..._be32(kid), ...data.sublist(8, 16), ...utf8.encode(spaceId)]);
     final z = await open(sk, data.sublist(16, 16 + nonceSize), data.sublist(16 + nonceSize), aad);
-    final j = jsonDecode(utf8.decode(gzip.decode(z))) as Map<String, dynamic>;
+    final j = jsonDecode(utf8.decode(gunzipLimited(z, maxSnapshotSize))) as Map<String, dynamic>;
     return (version, j);
   });
+}
+
+/// Same cap the Go side uses when it opens snapshots; real ones are far smaller.
+const maxSnapshotSize = 256 << 20;
+
+/// gzip.decode, but gives up as soon as the output passes [limit] bytes
+/// instead of inflating a bomb into memory first.
+Uint8List gunzipLimited(List<int> data, int limit) {
+  final out = _LimitedSink(limit);
+  final sink = gzip.decoder.startChunkedConversion(out);
+  for (var i = 0; i < data.length; i += 64 << 10) {
+    sink.add(data.sublist(i, min(i + (64 << 10), data.length)));
+  }
+  sink.close();
+  return out.bytes.takeBytes();
+}
+
+class _LimitedSink implements Sink<List<int>> {
+  _LimitedSink(this.limit);
+  final int limit;
+  final bytes = BytesBuilder(copy: false);
+
+  @override
+  void add(List<int> chunk) {
+    if (bytes.length + chunk.length > limit) throw E2EAuthError();
+    bytes.add(chunk);
+  }
+
+  @override
+  void close() {}
 }

@@ -10,8 +10,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1.1"
+    CURRENT_PROJECT_VERSION: "2"
     DEVELOPMENT_TEAM: ""
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -37,6 +37,8 @@ targets:
     type: application
     platform: macOS
     sources: [Shared, macOS, Resources]
+    scheme:
+      testTargets: [FileSwitchTests]
     info:
       path: macOS/Info.plist
       properties:
@@ -72,6 +74,7 @@ targets:
     type: application
     platform: iOS
     sources: [Shared, iOS, Resources]
+    scheme: {}
     info:
       path: iOS/Info.plist
       properties:
@@ -102,3 +105,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/Frameworks"]
         CODE_SIGN_STYLE: Automatic
+  FileSwitchTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests]
+    dependencies:
+      - target: FileSwitch-macOS
+    settings:
+      base:
+        SDKROOT: macosx
+        SUPPORTED_PLATFORMS: macosx
+        PRODUCT_NAME: FileSwitchTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.fileswitch.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/FileSwitch.app/Contents/MacOS/FileSwitch
+        BUNDLE_LOADER: $(TEST_HOST)
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual

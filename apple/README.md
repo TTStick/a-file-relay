@@ -13,6 +13,7 @@ apple/
 │   ├── UI/                  共享界面：连接、文件树、时间线、分类、传输、回收站、设备与安全
 │   └── App/                 入口；DemoHooks.swift 只在 Debug 下编译，用于自动化测试
 ├── macOS/StatusBar.swift    菜单栏常驻、拖文件靠近右上角弹出的分类投递面板
+├── Tests/                   单元测试
 ├── iOS/                     iOS 的 Info.plist
 └── Resources/               图标与强调色
 ```
@@ -29,6 +30,12 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 ```bash
 xcodebuild -project FileSwitch.xcodeproj -scheme FileSwitch-macOS -configuration Release build
+```
+
+单元测试（安全相关的检查，部分用例需要联网）：
+
+```bash
+xcodebuild test -project FileSwitch.xcodeproj -scheme FileSwitch-macOS
 ```
 
 改了 `project.yml` 之后，用 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 重新生成工程：

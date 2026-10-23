@@ -785,6 +785,16 @@ func (db *DB) Stats(userID string) (Stats, error) {
 	return s, err
 }
 
+// Usage is what counts against a user's quota: stored files including the
+// trash, plus the declared size of uploads still in progress.
+func (db *DB) Usage(userID string) (int64, error) {
+	var n int64
+	err := db.QueryRow(`SELECT
+			(SELECT COALESCE(SUM(size), 0) FROM nodes WHERE user_id = ? AND is_dir = 0) +
+			(SELECT COALESCE(SUM(size), 0) FROM uploads WHERE user_id = ?)`, userID, userID).Scan(&n)
+	return n, err
+}
+
 // AllBlobs returns every blob id referenced by the database (for orphan cleanup).
 func (db *DB) AllBlobs() (map[string]bool, error) {
 	rows, err := db.Query(`SELECT blob FROM nodes WHERE blob != '' UNION SELECT id FROM uploads`)

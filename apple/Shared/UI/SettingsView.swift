@@ -205,6 +205,7 @@ struct PairingSheet: View {
     @State private var code: String?
     @State private var expires: Date?
     @State private var error: String?
+    @State private var copiedChange: Int?
 
     var body: some View {
         VStack(spacing: 18) {
@@ -222,14 +223,7 @@ struct PairingSheet: View {
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 HStack {
-                    Button("复制配对码", systemImage: "doc.on.doc") {
-                        #if os(macOS)
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(code, forType: .string)
-                        #else
-                        UIPasteboard.general.string = code
-                        #endif
-                    }
+                    Button("复制配对码", systemImage: "doc.on.doc") { copy(code) }
                     .buttonStyle(.glass)
                     Button("完成") { dismiss() }.buttonStyle(.glassProminent)
                 }
@@ -250,6 +244,33 @@ struct PairingSheet: View {
             }
             do { (code, expires) = try await b.createPairingCode() } catch { self.error = error.localizedDescription }
         }
+        .onDisappear(perform: clearCopy)
+    }
+
+    // The code is a one-time key: keep it out of clipboard history and sync,
+    // and take it back off the clipboard when the sheet closes.
+    private func copy(_ code: String) {
+        #if os(macOS)
+        let pb = NSPasteboard.general
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        pb.declareTypes([.string, concealed], owner: nil)
+        pb.setString(code, forType: .string)
+        pb.setString("", forType: concealed)
+        copiedChange = pb.changeCount
+        #else
+        UIPasteboard.general.setItems([["public.utf8-plain-text": code]],
+                                      options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(10 * 60)])
+        copiedChange = UIPasteboard.general.changeCount
+        #endif
+    }
+
+    private func clearCopy() {
+        guard let copiedChange else { return }
+        #if os(macOS)
+        if NSPasteboard.general.changeCount == copiedChange { NSPasteboard.general.clearContents() }
+        #else
+        if UIPasteboard.general.changeCount == copiedChange { UIPasteboard.general.items = [] }
+        #endif
     }
 
     private func qr(_ s: String) -> CGImage? {

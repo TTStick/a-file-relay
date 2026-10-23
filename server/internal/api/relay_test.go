@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -41,7 +42,7 @@ type relayEnv struct {
 
 const nasToken = "test-nas-token-0123456789abcdefghijklmnop"
 
-func setupRelay(t *testing.T) *relayEnv {
+func setupRelay(t *testing.T, opts ...func(*config.Config)) *relayEnv {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	relayDir := t.TempDir()
@@ -60,6 +61,9 @@ func setupRelay(t *testing.T) *relayEnv {
 		RelayURL: rts.URL, RelayToken: nasToken, RelayFingerprint: hex.EncodeToString(sum[:]),
 		RelayInterval: 50 * time.Millisecond, CacheDays: 7, CacheMaxFile: 64 << 20, CacheMaxTotal: 1 << 30,
 		RemoteMaxFile: 1 << 30}
+	for _, o := range opts {
+		o(cfg)
+	}
 	db, err := store.Open(filepath.Join(dir, "t.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -231,14 +235,20 @@ func (c *rclient) upload(content []byte) (string, string) {
 	return created.ID, base64.StdEncoding.EncodeToString(e2e.HeaderNonce(ct.Bytes()))
 }
 
+// nodeByName waits for the node to show up: the NAS replies to an op before
+// it publishes the snapshot that includes the change.
 func (c *rclient) nodeByName(name string) store.Node {
-	for _, n := range c.snapshot().Nodes {
-		if n.Name == name {
-			return n
+	var found store.Node
+	waitUntil(c.e.t, fmt.Sprintf("node %q in snapshot", name), func() bool {
+		for _, n := range c.snapshot().Nodes {
+			if n.Name == name {
+				found = n
+				return true
+			}
 		}
-	}
-	c.e.t.Fatalf("node %q not in snapshot", name)
-	return store.Node{}
+		return false
+	})
+	return found
 }
 
 func TestRelayEndToEnd(t *testing.T) {
@@ -453,10 +463,13 @@ func TestRelayEndToEnd(t *testing.T) {
 		return true
 	})
 	// The revoked device's keys can't open anything published from now on.
-	st, data := mac.do("GET", "/r/v1/snapshot", nil, nil)
-	if st != 200 {
-		t.Fatal(st)
-	}
+	// (The keyring goes out first; the snapshot under the new key follows.)
+	var data []byte
+	waitUntil(t, "snapshot under the new key", func() bool {
+		st, b := mac.do("GET", "/r/v1/snapshot", nil, nil)
+		data = b
+		return st == 200 && len(b) >= 8 && binary.BigEndian.Uint32(b[4:8]) == mac.kid
+	})
 	if _, _, err := e2e.OpenSnapshot(data, phone.space, phone.ring); err == nil {
 		t.Fatal("revoked device can still read new snapshots")
 	}

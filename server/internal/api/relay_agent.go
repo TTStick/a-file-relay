@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -44,6 +46,18 @@ type relayAgent struct {
 	fastUntil time.Time
 	reconcile map[string]time.Time // user id -> last cache reconcile
 	lastErr   string
+
+	// Cache copies are pushed by their own goroutine: a big file on a slow
+	// uplink would otherwise hold up ops and pairing for minutes.
+	cacheJobs chan cacheJob
+	cacheBusy map[string]bool // keys queued or being uploaded (guarded by mu)
+}
+
+type cacheJob struct {
+	user, space, key string
+	n                store.Node
+	kid              uint32
+	sk               []byte
 }
 
 var (
@@ -104,11 +118,13 @@ func (s *Server) StartRelay(ctx context.Context) error {
 		api:     &http.Client{Transport: tr, Timeout: time.Minute},
 		bulk:    &http.Client{Transport: tr},
 		opTimes: map[string][]time.Time{}, reconcile: map[string]time.Time{},
+		cacheJobs: make(chan cacheJob, 256), cacheBusy: map[string]bool{},
 	}
 	s.relay = a
 	s.log.Info("中转模式已启用：NAS 只主动连接中转站，不接受任何入站连接", "relay", s.cfg.RelayURL,
 		"interval", s.cfg.RelayInterval.String(), "remote_purge", s.cfg.RemotePurge, "remote_pairing", s.cfg.RemotePairing)
 	go a.run(ctx)
+	go a.pushCache(ctx)
 	return nil
 }
 
@@ -789,6 +805,9 @@ func (a *relayAgent) ingest(ctx context.Context, au *Auth, op relayOp) (any, err
 func (a *relayAgent) ingestFile(ctx context.Context, au *Auth, ring e2e.Keyring, nonce []byte, parent, cat string,
 	timeline bool, rel, blobID string, size, mtime int64) error {
 	s := a.s
+	if err := s.roomFor(au.User.ID, size); err != nil {
+		return err
+	}
 	want := e2e.CipherSize(size)
 	r, err := a.req(ctx, http.MethodGet, "/n/v1/blobs/"+blobID, nil, nil)
 	if err != nil {
@@ -1089,8 +1108,14 @@ func (a *relayAgent) reconcileCache(ctx context.Context, space string, u store.U
 	if err := a.call(ctx, http.MethodGet, "/n/v1/spaces/"+space+"/cache", nil, &remote, 32<<20); err != nil {
 		return false, err
 	}
+	a.mu.Lock()
+	busy := maps.Clone(a.cacheBusy)
+	a.mu.Unlock()
 	have := map[string]bool{}
 	for _, e := range remote.Entries {
+		if busy[e.Key] {
+			continue // incomplete because it is being uploaded right now
+		}
 		if _, want := desired[e.Key]; !want || !e.Complete {
 			r, err := a.req(ctx, http.MethodDelete, "/n/v1/spaces/"+space+"/cache/"+e.Key, nil, nil)
 			if err == nil {
@@ -1102,17 +1127,43 @@ func (a *relayAgent) reconcileCache(ctx context.Context, space string, u store.U
 		}
 		have[e.Key] = true
 	}
-	uploaded := false
+	queued := false
 	for key, n := range desired {
-		if have[key] {
+		if have[key] || busy[key] {
 			continue
 		}
-		if err := a.uploadCache(ctx, space, key, n, kid, ring[kid]); err != nil {
-			return uploaded, fmt.Errorf("cache %s: %w", n.Name, err)
+		a.mu.Lock()
+		select {
+		case a.cacheJobs <- cacheJob{user: u.ID, space: space, key: key, n: n, kid: kid, sk: ring[kid]}:
+			a.cacheBusy[key] = true
+			queued = true
+		default: // queue full; the next reconcile picks the rest up
 		}
-		uploaded = true
+		a.mu.Unlock()
 	}
-	return uploaded, nil
+	return queued, nil
+}
+
+func (a *relayAgent) pushCache(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case j := <-a.cacheJobs:
+			err := a.uploadCache(ctx, j.space, j.key, j.n, j.kid, j.sk)
+			// a file deleted in the meantime is not worth a warning or a retry
+			failed := err != nil && ctx.Err() == nil && !errors.Is(err, fs.ErrNotExist)
+			if failed {
+				a.s.log.Warn("relay: cache upload failed", "file", j.n.Name, "err", err)
+			}
+			a.mu.Lock()
+			delete(a.cacheBusy, j.key)
+			if failed {
+				delete(a.reconcile, j.user) // try again on the next cycle
+			}
+			a.mu.Unlock()
+		}
+	}
 }
 
 func (a *relayAgent) uploadCache(ctx context.Context, space, key string, n store.Node, kid uint32, sk []byte) error {

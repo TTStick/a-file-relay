@@ -25,6 +25,28 @@ type uploadParams struct {
 	Conflict   string `json:"conflict"`
 }
 
+// roomFor checks a new file against the size limit, the user's quota and the
+// free disk space (keeping 256 MiB for the database and temp files).
+func (s *Server) roomFor(userID string, size int64) error {
+	if s.cfg.MaxFileSize > 0 && size > s.cfg.MaxFileSize {
+		return errf(http.StatusRequestEntityTooLarge, "too_large", "文件超过服务器限制")
+	}
+	if s.cfg.UserQuota > 0 {
+		used, err := s.db.Usage(userID)
+		if err != nil {
+			return err
+		}
+		if used+size > s.cfg.UserQuota {
+			return errf(http.StatusInsufficientStorage, "quota", "存储配额已满（%.1f / %.1f GB），请清理文件或清空回收站",
+				float64(used)/(1<<30), float64(s.cfg.UserQuota)/(1<<30))
+		}
+	}
+	if free, _ := diskSpace(s.cfg.DataDir); free > 0 && size > int64(free)-(256<<20) {
+		return errf(http.StatusInsufficientStorage, "disk_full", "服务器磁盘空间不足")
+	}
+	return nil
+}
+
 // prepare validates an upload request and resolves the destination folder.
 func (s *Server) prepare(a *Auth, p *uploadParams) error {
 	if _, err := store.SplitRelPath(p.Path); err != nil {
@@ -33,11 +55,8 @@ func (s *Server) prepare(a *Auth, p *uploadParams) error {
 	if p.Size < 0 {
 		return errf(http.StatusBadRequest, "invalid", "无效的文件大小")
 	}
-	if s.cfg.MaxFileSize > 0 && p.Size > s.cfg.MaxFileSize {
-		return errf(http.StatusRequestEntityTooLarge, "too_large", "文件超过服务器限制")
-	}
-	if free, _ := diskSpace(s.cfg.DataDir); free > 0 && p.Size > int64(free)-(256<<20) {
-		return errf(http.StatusInsufficientStorage, "disk_full", "服务器磁盘空间不足")
+	if err := s.roomFor(a.User.ID, p.Size); err != nil {
+		return err
 	}
 	switch p.Conflict {
 	case "":

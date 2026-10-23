@@ -274,7 +274,7 @@ $id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.
   /// Opens a local file with its default app (desktop) or the share sheet (mobile).
   Future<void> openLocal(String path) async {
     if (Platform.isMacOS) {
-      await Process.run('open', [path]);
+      await Process.run('open', ['--', path]);
     } else if (Platform.isWindows) {
       await Process.run('explorer', [path]);
     } else {
@@ -284,7 +284,7 @@ $id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.
 
   Future<void> revealLocal(String path) async {
     if (Platform.isMacOS) {
-      await Process.run('open', ['-R', path]);
+      await Process.run('open', ['-R', '--', path]);
     } else if (Platform.isWindows) {
       await Process.run('explorer', ['/select,', path]);
     } else {

@@ -98,6 +98,7 @@ type Server struct {
 	log   *slog.Logger
 
 	mu      sync.Mutex
+	quotaMu sync.Mutex                   // check-and-reserve of relay space must not interleave
 	subs    map[string]map[*sub]struct{} // space -> SSE subscribers
 	nasSeen time.Time
 	busy    map[string]bool
@@ -207,8 +208,10 @@ func readJSON(r *http.Request, v any, limit int64) error {
 
 func (s *Server) ip(r *http.Request) string {
 	if s.cfg.TrustProxy {
+		// last entry: the one added by our proxy, not by the client
 		if x := r.Header.Get("X-Forwarded-For"); x != "" {
-			return strings.TrimSpace(strings.Split(x, ",")[0])
+			parts := strings.Split(x, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
 		}
 	}
 	h, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -456,23 +459,35 @@ func (s *Server) createBlob(w http.ResponseWriter, r *http.Request, d devCtx) er
 	if req.Size <= 0 || req.Size > s.cfg.MaxFile {
 		return errf(413, "file too large for this relay")
 	}
-	if s.db.spaceUsage(d.space)+req.Size > s.cfg.Quota {
-		return errf(507, "relay quota exceeded; wait for the NAS to collect pending uploads")
-	}
-	id := store.NewID()
-	f, err := os.OpenFile(s.blobPath(id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	id, err := s.reserve(d.space, d.device, "up", "", req.Size)
 	if err != nil {
-		return err
-	}
-	f.Close()
-	t := now()
-	if _, err := s.db.Exec(`INSERT INTO blobs(`+blobCols+`) VALUES(?,?,?,?,?,?,?,?,?)`,
-		id, d.space, d.device, "up", "", req.Size, 0, t, t); err != nil {
-		os.Remove(s.blobPath(id))
 		return err
 	}
 	writeJSON(w, 201, map[string]any{"id": id, "size": req.Size, "received": 0})
 	return nil
+}
+
+// reserve checks the space's quota and records an empty blob in one step, so
+// parallel uploads can't all pass the check before any of them is counted.
+func (s *Server) reserve(space, device, kind, key string, size int64) (string, error) {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	if s.db.spaceUsage(space)+size > s.cfg.Quota {
+		return "", errf(507, "relay quota exceeded; wait for the NAS to collect pending uploads")
+	}
+	id := store.NewID()
+	f, err := os.OpenFile(s.blobPath(id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+	t := now()
+	if _, err := s.db.Exec(`INSERT INTO blobs(`+blobCols+`) VALUES(?,?,?,?,?,?,?,?,?)`,
+		id, space, device, kind, key, size, 0, t, t); err != nil {
+		os.Remove(s.blobPath(id))
+		return "", err
+	}
+	return id, nil
 }
 
 func (s *Server) ownBlob(d devCtx, id string) (blobRow, error) {
@@ -703,7 +718,11 @@ func (s *Server) poll(w http.ResponseWriter, r *http.Request) error {
 		Body   json.RawMessage `json:"body"`
 	}
 	ops := []op{}
-	rows, err := s.db.Query(`SELECT seq, space, device_id, op_id, body FROM ops ORDER BY seq LIMIT 200`)
+	// Oldest first, but at most 50 per space per poll so one busy space
+	// can't starve the others.
+	rows, err := s.db.Query(`SELECT seq, space, device_id, op_id, body FROM (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY space ORDER BY seq) AS n FROM ops
+		) WHERE n <= 50 ORDER BY seq LIMIT 200`)
 	if err != nil {
 		return err
 	}
@@ -927,18 +946,8 @@ func (s *Server) putCache(w http.ResponseWriter, r *http.Request) error {
 		if err == nil {
 			s.removeBlob(b.ID)
 		}
-		if s.db.spaceUsage(space)+size > s.cfg.Quota {
-			return errf(507, "relay quota exceeded")
-		}
-		id := store.NewID()
-		f, err := os.OpenFile(s.blobPath(id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		id, err := s.reserve(space, "", "cache", key, size)
 		if err != nil {
-			return err
-		}
-		f.Close()
-		t := now()
-		if _, err := s.db.Exec(`INSERT INTO blobs(`+blobCols+`) VALUES(?,?,?,?,?,?,?,?,?)`, id, space, "", "cache", key, size, 0, t, t); err != nil {
-			os.Remove(s.blobPath(id))
 			return err
 		}
 		b, _ = s.db.blob(id)

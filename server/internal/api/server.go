@@ -20,7 +20,7 @@ import (
 	"fileswitch/internal/store"
 )
 
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 type Server struct {
 	cfg     *config.Config
@@ -177,8 +177,10 @@ func readJSON(r *http.Request, v any) error {
 
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
+		// The proxy appends the address it saw, so the last entry is the one
+		// we can trust; anything before it came from the client.
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+			return lastHop(xff)
 		}
 		if xr := r.Header.Get("X-Real-IP"); xr != "" {
 			return strings.TrimSpace(xr)
@@ -189,6 +191,11 @@ func (s *Server) clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+func lastHop(xff string) string {
+	parts := strings.Split(xff, ",")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func (s *Server) authed(h handler) http.Handler {
