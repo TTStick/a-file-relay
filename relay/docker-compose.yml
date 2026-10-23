@@ -1,0 +1,46 @@
+# FileSwitch 公网中转站（推荐：有域名，自动申请 Let's Encrypt 证书）
+#
+#   1. 域名 A 记录指向这台服务器，开放 80/443 端口
+#   2. cp .env.example .env，填 FS_DOMAIN 和随机生成的 FS_RELAY_NAS_TOKEN
+#        openssl rand -hex 32
+#   3. docker compose up -d --build
+#
+# 中转站只存放加密后的数据，读不到任何文件内容和文件名；即使这台服务器被攻破，
+# 也无法伪造操作、无法连入 NAS。
+services:
+  relay:
+    build:
+      context: ../server
+      args:
+        GOPROXY: https://proxy.golang.org,direct
+    image: fileswitch:latest
+    command: ["relay"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./relay-data:/data
+    environment:
+      FS_TLS: "off"              # TLS 由 Caddy 负责；relay 端口只在内部网络可见
+      FS_TRUST_PROXY: "true"
+      FS_RELAY_NAS_TOKEN: ${FS_RELAY_NAS_TOKEN:?请在 .env 中设置}
+      FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}       # 每个用户在中转站最多暂存
+      FS_RELAY_MAX_FILE: ${FS_RELAY_MAX_FILE:-16G}
+      FS_RELAY_CACHE_TTL: ${FS_RELAY_CACHE_TTL:-336h}
+    expose:
+      - "8443"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      FS_DOMAIN: ${FS_DOMAIN:?请在 .env 中设置}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+    depends_on: [relay]

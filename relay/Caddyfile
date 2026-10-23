@@ -1,0 +1,17 @@
+{$FS_DOMAIN} {
+	# 大文件分块上传与长连接事件流
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy relay:8443 {
+		flush_interval -1
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

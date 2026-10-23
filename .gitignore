@@ -1,0 +1,12 @@
+# runtime data and secrets — never commit these
+data/
+secrets/
+*.key
+*.db
+*.db-wal
+*.db-shm
+relay/.env
+relay/relay-data/
+relay/caddy-data/
+
+.DS_Store

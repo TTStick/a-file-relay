@@ -1,0 +1,51 @@
+# FileSwitch —— NAS 端
+#   docker compose up -d --build
+#   docker compose logs fileswitch     # 初始管理员密码、TLS 指纹
+#
+# 安全加固：只读根文件系统、去掉全部 Linux capabilities、禁止提权、非 root 运行、
+# 只挂载交换站自己的数据目录。即使进程被攻破，也碰不到 NAS 上的其他数据。
+services:
+  fileswitch:
+    build:
+      context: ./server
+      args:
+        GOPROXY: https://proxy.golang.org,direct   # 国内可改 https://goproxy.cn,direct
+    image: fileswitch:latest
+    container_name: fileswitch
+    restart: unless-stopped
+    user: "1000:1000"            # 改成数据目录属主的 uid:gid（群晖可用 `id` 查看）
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    # 局域网直连端口。若只想经中转站访问（NAS 完全不监听），删掉 ports 并设置 FS_LAN=false
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./data:/data              # 只挂这一个目录，不要挂 NAS 上的其他共享文件夹
+      # 推荐：主密钥放在数据卷之外
+      # - ./secrets/master.key:/run/secrets/master.key:ro
+    environment:
+      FS_SERVER_NAME: "我的交换站"
+      FS_ADMIN_USER: admin
+      FS_TRASH_DAYS: "30"
+      FS_ENCRYPT: "true"
+      # FS_MASTER_KEY_FILE: /run/secrets/master.key
+      # FS_TLS_HOSTS: nas.local,192.168.1.10
+
+      # ---- 公网中转（NAS 只主动连出，不开放任何入站端口）----
+      # FS_RELAY_URL: https://relay.example.com
+      # FS_RELAY_TOKEN: <与中转站 FS_RELAY_NAS_TOKEN 相同>
+      # FS_RELAY_FINGERPRINT: <中转站使用自签证书时填写其指纹；用正规证书时留空>
+      # FS_RELAY_INTERVAL: 20s        # 空闲时多久向中转站取一次件；有活动后 2 分钟内每 2 秒一次
+      # FS_RELAY_CACHE_DAYS: "7"      # 把最近几天的文件预先加密放到中转站，外出时秒下
+      # FS_RELAY_CACHE_MAX_FILE: 256M
+      # FS_RELAY_CACHE_MAX_TOTAL: 4G
+      # FS_REMOTE_MAX_FILE: 8G        # 远程设备单文件上限
+      # FS_REMOTE_PURGE: "false"      # 远程设备能否彻底删除（默认不能，只能进回收站）
+      # FS_REMOTE_PAIRING: "false"    # 远程设备能否添加新设备（默认不能）
+      # FS_LAN: "false"               # 完全不监听端口，只经中转站访问
