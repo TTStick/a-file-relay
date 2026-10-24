@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum SectionID: Hashable {
     case files, timeline, categories, category(String), trash, transfers, settings
@@ -214,3 +215,43 @@ struct TimeRow: View {
 }
 
 let categoryPalette = ["#4F7CFF", "#2EAD6B", "#F59E0B", "#E5534B", "#B45FD8", "#14B8A6", "#EC4899", "#64748B", "#8D6E4F", "#0EA5E9"]
+
+extension EnvironmentValues {
+    /// Mac, or an iPad window wide enough for the sidebar + tree + table layout.
+    @Entry var wideLayout = false
+}
+
+#if os(iOS)
+/// A file from the photo picker or dropped from another app, copied to a temp
+/// file (the original is only readable while the import runs).
+struct PickedFile: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .item) { received in
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dst = dir.appendingPathComponent(received.file.lastPathComponent)
+            try FileManager.default.copyItem(at: received.file, to: dst)
+            return PickedFile(url: dst)
+        }
+    }
+}
+#endif
+
+extension View {
+    /// Accepts files and folders dragged in from Finder, or on iPad from Files
+    /// and other apps, and hands them over as local URLs.
+    func fileDrop(isTargeted: @escaping (Bool) -> Void = { _ in }, perform: @escaping ([URL]) -> Void) -> some View {
+        #if os(macOS)
+        dropDestination(for: URL.self) { urls, _ in
+            perform(urls)
+            return true
+        } isTargeted: { isTargeted($0) }
+        #else
+        dropDestination(for: PickedFile.self) { files, _ in
+            perform(files.map(\.url))
+            return true
+        } isTargeted: { isTargeted($0) }
+        #endif
+    }
+}

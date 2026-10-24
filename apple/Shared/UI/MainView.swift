@@ -20,16 +20,36 @@ struct RootView: View {
 }
 
 struct MainView: View {
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
     var body: some View {
         #if os(macOS)
+        split
+        #else
+        // iPad in a full-width or large window gets the Mac layout; iPhone, and
+        // iPad in a narrow window (split screen, Slide Over), the tab layout.
+        if UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular {
+            split
+        } else {
+            PhoneTabs()
+        }
+        #endif
+    }
+
+    private var split: some View {
         NavigationSplitView {
             Sidebar().navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 320)
         } detail: {
+            #if os(macOS)
             DetailView()
+            #else
+            // the sidebar already names the page; keep the space for content
+            NavigationStack { DetailView().navigationBarTitleDisplayMode(.inline) }
+            #endif
         }
-        #else
-        PhoneTabs()
-        #endif
+        .environment(\.wideLayout, true)
     }
 }
 
@@ -48,7 +68,6 @@ struct DetailView: View {
     }
 }
 
-#if os(macOS)
 struct Sidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(Transfers.self) private var transfers
@@ -98,18 +117,16 @@ struct CategoryRow: View {
         }
         .padding(.vertical, 1)
         .background(targeted ? category.color.opacity(0.25) : .clear, in: .rect(cornerRadius: 6))
-        .dropDestination(for: URL.self) { urls, _ in
+        .fileDrop(isTargeted: { targeted = $0 }) { urls in
             Transfers.shared.upload(urls, categoryID: category.id, destination: category.name)
             AppModel.shared.toast("已开始上传 \(urls.count) 项到「\(category.name)」")
-            return true
-        } isTargeted: { targeted = $0 }
+        }
         .contextMenu {
             Button("编辑分类", systemImage: "pencil") { ActionCenter.shared.editCategory(category) }
             Button("删除分类", systemImage: "trash", role: .destructive) { ActionCenter.shared.deleteCategory(category) }
         }
     }
 }
-#endif
 
 /// Account and connection status (replaces a logo block): who, where, how connected.
 struct AccountFooter: View {
@@ -160,19 +177,31 @@ struct PhoneTabs: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: nav.section) { _, s in
-            switch s {
-            case .files: tab = 0
-            case .timeline: tab = 1
-            case .category, .categories: tab = 2
-            case .transfers: tab = 3
-            case .settings: tab = 4
-            default: break
-            }
+            if let t = Self.tab(for: s) { tab = t }
+        }
+        // Keep Nav in step with the tabs, so an iPad window that grows back to
+        // full width opens the same page in the sidebar layout.
+        .onChange(of: tab) { _, t in
+            if Self.tab(for: nav.section) != t { nav.section = Self.sections[t] }
         }
         .onAppear {
+            if let t = Self.tab(for: nav.section) { tab = t }
             #if DEBUG
             if let t = ProcessInfo.processInfo.environment["FS_DEMO_TAB"], let i = Int(t) { tab = i }
             #endif
+        }
+    }
+
+    private static let sections: [SectionID] = [.files, .timeline, .categories, .transfers, .settings]
+
+    private static func tab(for s: SectionID?) -> Int? {
+        switch s {
+        case .files: 0
+        case .timeline: 1
+        case .category, .categories: 2
+        case .transfers: 3
+        case .settings: 4
+        default: nil
         }
     }
 }

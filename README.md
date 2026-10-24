@@ -26,7 +26,7 @@
 
 - **拖到菜单栏就上传**：macOS 上把文件或文件夹拖到右上角菜单栏图标附近，会弹出投递面板；面板上是你自己定义的分类，拖到某个分类上松手就开始上传。
 - **常驻托盘**：macOS 菜单栏、Windows 系统托盘常驻；Windows 另有贴在右下角的「迷你投递窗」。
-- **原生 Apple 客户端**：macOS 和 iOS 是 SwiftUI 原生应用，采用 macOS 26 / iOS 26 的 Liquid Glass 设计（悬浮的玻璃侧边栏、玻璃投递面板、可收起的玻璃标签栏）；Android 和 Windows 使用 Flutter 客户端。
+- **原生 Apple 客户端**：macOS 和 iOS 是 SwiftUI 原生应用，采用 macOS 26 / iOS 26 的 Liquid Glass 设计（悬浮的玻璃侧边栏、玻璃投递面板、可收起的玻璃标签栏）。iPad 上和 Mac 一样是侧边栏 + 文件树 + 多列表格，可以从「文件」等 App 把文件拖到分类上上传；分屏或侧拉成窄窗口时自动换成手机布局。Android 和 Windows 使用 Flutter 客户端。
 - **像共享文件夹一样管理**：文件树、面包屑、搜索、拖拽移动、多选、回收站；文件可以归类，也能按时间线回看每一次投递。
 - **私密、安全**：只开一个 HTTPS 端口；TLS 1.3 + 证书指纹固定；Argon2id 密码 + 每台设备独立令牌（可随时撤销）；文件在 NAS 磁盘上加密存储。
 - **出门也能用，但 NAS 不暴露到公网**（可选）：借一台有公网 IP 的服务器做中转站和缓存。NAS 不做端口映射，而是按自己的节奏**主动**去中转站取件；中转站上只有端到端加密的密文，被攻破也读不到任何东西。在家自动直连，出门自动走中转。
@@ -51,10 +51,14 @@
   </tr>
 </table>
 
-### 连接 · 手机端
+### 连接 · iPad · 手机端
 
 <p align="center">
   <img src="docs/images/connect.png" width="720" alt="添加交换站">
+</p>
+
+<p align="center">
+  <img src="docs/images/ipad-files.png" width="560" alt="iPad：侧边栏、文件树与多列表格">
 </p>
 
 <p align="center">

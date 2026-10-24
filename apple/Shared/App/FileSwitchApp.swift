@@ -30,6 +30,9 @@ struct FileSwitchApp: App {
             .environment(transfers)
             .environment(nav)
             .onOpenURL { model.openPairLink($0) }
+            #if DEBUG && os(iOS)
+            .modifier(DemoSizeClass())
+            #endif
             .task {
                 if !model.ready { await model.start() }
                 #if DEBUG

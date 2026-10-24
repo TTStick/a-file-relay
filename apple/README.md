@@ -11,6 +11,7 @@ apple/
 ├── Shared/
 │   ├── Core/                协议与加密：HTTP + 证书固定、局域网直连、中转端到端加密（XChaCha20-Poly1305）、传输队列
 │   ├── UI/                  共享界面：连接、文件树、时间线、分类、传输、回收站、设备与安全
+│   │                        （Mac 和宽窗口的 iPad 用侧边栏布局，iPhone 和窄窗口用标签栏布局）
 │   └── App/                 入口；DemoHooks.swift 只在 Debug 下编译，用于自动化测试
 ├── macOS/StatusBar.swift    菜单栏常驻、拖文件靠近右上角弹出的分类投递面板
 ├── Tests/                   单元测试

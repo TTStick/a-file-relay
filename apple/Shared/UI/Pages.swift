@@ -119,11 +119,10 @@ struct CategoryView: View {
                             .padding(8).allowsHitTesting(false)
                     }
                 }
-                .dropDestination(for: URL.self) { urls, _ in
+                .fileDrop(isTargeted: { targeted = $0 }) { urls in
                     Transfers.shared.upload(urls, categoryID: c.id, destination: c.name)
                     model.toast("已开始上传 \(urls.count) 项到「\(c.name)」")
-                    return true
-                } isTargeted: { targeted = $0 }
+                }
                 .navigationTitle(c.icon.isEmpty ? c.name : "\(c.icon) \(c.name)")
                 #if os(macOS)
                 .navigationSubtitle("\(c.count) 项")

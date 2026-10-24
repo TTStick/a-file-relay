@@ -10,6 +10,8 @@ import AppKit
 ///   FS_DEMO_PAIR          pair through the relay with this code
 ///   FS_DEMO_NAME          device name
 ///   FS_DEMO_SECTION       files | timeline | settings | transfers | trash | category:<name>
+///   FS_DEMO_FOLDER        open the folder with this name
+///   FS_DEMO_COMPACT       (iPad) lay out as in a narrow window (split screen, Slide Over)
 ///   FS_SELFTEST=<file>    run an end-to-end check, write the result as JSON, quit
 ///   FS_SHOTS=<dir>        (macOS) capture each page and the drop panel as PNGs, quit
 ///   FS_SHOTS_SEED=<dir>   upload <dir>/root/* to the root and <dir>/<category>/* to that category first
@@ -66,6 +68,10 @@ enum DemoHooks {
                 let name = String(s.dropFirst(9))
                 if let c = AppModel.shared.categories.first(where: { $0.name == name }) { Nav.shared.section = .category(c.id) }
             default: break
+            }
+            if let name = env["FS_DEMO_FOLDER"],
+               let f = (try? await AppModel.shared.backend?.search(name))?.first(where: { $0.isDir && $0.name == name }) {
+                Nav.shared.openFolder(f.id)
             }
             if let out = env["FS_SELFTEST"] { await selfTest(out) }
             #if os(macOS)
@@ -208,4 +214,16 @@ enum DemoHooks {
         if env["FS_SELFTEST_KEEP"] == nil { exit(ok ? 0 : 1) }
     }
 }
+#if os(iOS)
+/// FS_DEMO_COMPACT: the size class iPadOS gives a narrow window.
+struct DemoSizeClass: ViewModifier {
+    func body(content: Content) -> some View {
+        if DemoHooks.env["FS_DEMO_COMPACT"] != nil {
+            content.environment(\.horizontalSizeClass, .compact)
+        } else {
+            content
+        }
+    }
+}
+#endif
 #endif

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct FilesView: View {
     @Environment(AppModel.self) private var model
     @Environment(Nav.self) private var nav
+    @Environment(\.wideLayout) private var wide
     @State private var listing: Listing?
     @State private var error: String?
     @State private var selection = Set<Node.ID>()
@@ -60,11 +61,19 @@ struct FilesView: View {
                 .frame(minWidth: 480)
         }
         #else
-        phoneList
+        if wide {
+            HStack(spacing: 0) {
+                FolderTree(currentPath: listing?.path ?? [])
+                    .frame(width: 230)
+                Divider().ignoresSafeArea()
+                table
+            }
+        } else {
+            phoneList
+        }
         #endif
     }
 
-    #if os(macOS)
     private var table: some View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("名称", value: \.name, comparator: .localizedStandard) { n in
@@ -100,15 +109,13 @@ struct FilesView: View {
         } primaryAction: { ids in
             if let n = rows.first(where: { ids.contains($0.id) }) { actions.open(n) }
         }
+        #if os(macOS)
         .onDeleteCommand { actions.trash(selectedNodes) }
+        #endif
         .overlay { emptyOrError }
-        .dropDestination(for: URL.self) { urls, _ in
-            upload(urls)
-            return true
-        } isTargeted: { dropTargeted = $0 }
+        .fileDrop(isTargeted: { dropTargeted = $0 }) { upload($0) }
         .overlay { if dropTargeted { dropHint } }
     }
-    #endif
 
     #if os(iOS)
     private var phoneList: some View {
@@ -151,11 +158,8 @@ struct FilesView: View {
             if results != nil {
                 EmptyState(symbol: "magnifyingglass", title: "没有找到匹配的文件")
             } else {
-                #if os(macOS)
-                EmptyState(symbol: "tray.and.arrow.down", title: "这里还是空的", hint: "把文件或文件夹拖到这里即可上传")
-                #else
-                EmptyState(symbol: "tray.and.arrow.down", title: "这里还是空的", hint: "点右上角 + 上传文件")
-                #endif
+                EmptyState(symbol: "tray.and.arrow.down", title: "这里还是空的",
+                           hint: wide ? "把文件或文件夹拖到这里即可上传" : "点右上角 + 上传文件")
             }
         }
     }
@@ -257,23 +261,6 @@ struct FilesView: View {
     #endif
 }
 
-#if os(iOS)
-/// A photo/video from the picker, copied to a temp file.
-struct PickedFile: Transferable {
-    let url: URL
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .item) { received in
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let dst = dir.appendingPathComponent(received.file.lastPathComponent)
-            try FileManager.default.copyItem(at: received.file, to: dst)
-            return PickedFile(url: dst)
-        }
-    }
-}
-#endif
-
-#if os(macOS)
 /// Collapsible folder tree beside the file table.
 struct FolderTree: View {
     @Environment(AppModel.self) private var model
@@ -354,4 +341,3 @@ private struct TreeRow: View {
         }
     }
 }
-#endif
