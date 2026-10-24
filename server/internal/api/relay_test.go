@@ -37,6 +37,7 @@ type relayEnv struct {
 	lan      *client
 	relayURL string
 	relayDir string
+	fp       string
 	rc       *http.Client
 }
 
@@ -54,11 +55,20 @@ func setupRelay(t *testing.T, opts ...func(*config.Config)) *relayEnv {
 	t.Cleanup(func() { rs.Close() })
 	rts := httptest.NewTLSServer(rs.Handler())
 	t.Cleanup(rts.Close)
+	e := &relayEnv{t: t, relayURL: rts.URL, relayDir: relayDir, rc: rts.Client()}
 	sum := sha256.Sum256(rts.Certificate().Raw)
+	e.fp = hex.EncodeToString(sum[:])
+	e.nas, e.lan = e.addNAS(opts...)
+	return e
+}
 
+// addNAS starts a NAS (user alice) that syncs with the env's relay.
+func (e *relayEnv) addNAS(opts ...func(*config.Config)) (*Server, *client) {
+	t := e.t
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	dir := t.TempDir()
 	cfg := &config.Config{DataDir: dir, TrashDays: 30, ServerName: "test-nas", LAN: true,
-		RelayURL: rts.URL, RelayToken: nasToken, RelayFingerprint: hex.EncodeToString(sum[:]),
+		RelayURL: e.relayURL, RelayToken: nasToken, RelayFingerprint: e.fp,
 		RelayInterval: 50 * time.Millisecond, CacheDays: 7, CacheMaxFile: 64 << 20, CacheMaxTotal: 1 << 30,
 		RemoteMaxFile: 1 << 30}
 	for _, o := range opts {
@@ -82,8 +92,7 @@ func setupRelay(t *testing.T, opts ...func(*config.Config)) *relayEnv {
 	if err := nas.StartRelay(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return &relayEnv{t: t, nas: nas, lan: &client{t: t, base: lts.URL}, relayURL: rts.URL, relayDir: relayDir,
-		rc: rts.Client()}
+	return nas, &client{t: t, base: lts.URL}
 }
 
 // rclient speaks the client side of the relay protocol, like the apps do.

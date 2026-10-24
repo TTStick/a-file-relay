@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"fileswitch/internal/auth"
@@ -38,6 +41,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := s.clientIP(r)
 	uname := auth.NormalizeUsername(req.Username)
+	name, err := deviceName(req.DeviceName)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	platform, err := platformName(req.Platform)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
 	if wait := s.limiter.Allow(ip, uname); wait > 0 {
 		secs := int(math.Ceil(wait.Seconds()))
 		w.Header().Set("Retry-After", fmt.Sprint(secs))
@@ -58,26 +71,79 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !auth.VerifyPassword(hash, req.Password) || err != nil {
 		s.limiter.Fail(ip, uname)
-		if user.ID != "" {
-			s.db.Audit(user.ID, "", "login_failed", "", ip)
-		}
+		// Logged with the name that was tried; attempts on accounts that
+		// don't exist go in without a user, where admins see them.
+		s.db.Audit(user.ID, "", "login_failed", cleanLabel(uname, 64), ip)
 		s.log.Warn("login failed", "user", uname, "ip", ip)
 		s.writeErr(w, r, errf(http.StatusUnauthorized, "bad_credentials", "用户名或密码错误"))
 		return
 	}
 	s.limiter.Success(ip, uname)
-	name := cleanLabel(req.DeviceName, 64)
 	if name == "" {
 		name = "未命名设备"
 	}
+	name = s.uniqueDeviceName(user.ID, name)
 	token, th := auth.NewToken()
-	dev, err := s.db.CreateDevice(user.ID, name, cleanLabel(req.Platform, 32), th, ip)
+	dev, err := s.db.CreateDevice(user.ID, name, platform, th, ip)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
 	s.db.Audit(user.ID, dev.ID, "login", name, ip)
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user, "device": dev})
+}
+
+// deviceName drops control characters and trims; a name over 64 characters
+// is refused instead of being cut short behind the user's back.
+func deviceName(raw string) (string, error) {
+	name := cleanLabel(raw, 1024)
+	if utf8.RuneCountInString(name) > 64 {
+		return "", errf(http.StatusBadRequest, "invalid", "设备名称太长（最多 64 个字符）")
+	}
+	return name, nil
+}
+
+var platforms = []string{"macos", "ios", "android", "windows", "linux", "cli"}
+
+func platformName(raw string) (string, error) {
+	p := strings.ToLower(strings.TrimSpace(raw))
+	if p != "" && !slices.Contains(platforms, p) {
+		return "", errf(http.StatusBadRequest, "invalid", "不支持的平台")
+	}
+	return p, nil
+}
+
+// uniqueDeviceName keeps entries in the device list apart: logging in twice
+// as "iPhone" gives "iPhone" and "iPhone (2)".
+func (s *Server) uniqueDeviceName(userID, name string) string {
+	devs, err := s.db.ListDevices(userID)
+	if err != nil {
+		return name
+	}
+	taken := map[string]bool{}
+	for _, d := range devs {
+		taken[d.Name] = true
+	}
+	base := []rune(name)
+	for i := 2; taken[name] && i < 1000; i++ {
+		suffix := fmt.Sprintf(" (%d)", i)
+		b := base[:min(len(base), 64-utf8.RuneCountInString(suffix))]
+		name = string(b) + suffix
+	}
+	return name
+}
+
+// freeText checks a search term: no control characters (SQLite would stop
+// reading a LIKE pattern at NUL) and a sane length.
+func freeText(raw string, max int) (string, error) {
+	s := strings.TrimSpace(raw)
+	if !utf8.ValidString(s) || strings.ContainsFunc(s, unicode.IsControl) {
+		return "", errf(http.StatusBadRequest, "bad_query", "搜索词含有无效字符")
+	}
+	if utf8.RuneCountInString(s) > max {
+		return "", errf(http.StatusBadRequest, "bad_query", "搜索词太长（最多 %d 个字符）", max)
+	}
+	return s, nil
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, a *Auth) error {
@@ -99,7 +165,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 	var req struct {
 		Old          string `json:"old_password"`
 		New          string `json:"new_password"`
-		SignOutOther bool   `json:"sign_out_others"`
+		SignOutOther *bool  `json:"sign_out_others"` // default: yes
 	}
 	if err := readJSON(r, &req); err != nil {
 		return err
@@ -117,7 +183,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 	if err := s.db.SetPassword(a.User.ID, h); err != nil {
 		return err
 	}
-	if req.SignOutOther {
+	if req.SignOutOther == nil || *req.SignOutOther {
 		ids, err := s.db.DeleteDevicesExcept(a.User.ID, a.Device.ID)
 		if err != nil {
 			return err
@@ -147,14 +213,33 @@ func (s *Server) handleRenameDevice(w http.ResponseWriter, r *http.Request, a *A
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
-	name := cleanLabel(req.Name, 64)
-	if name == "" {
-		return errf(http.StatusBadRequest, "invalid", "名称不能为空")
-	}
-	if err := s.db.RenameDevice(a.User.ID, r.PathValue("id"), name); err != nil {
+	if err := s.renameDevice(a, r.PathValue("id"), req.Name); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (s *Server) renameDevice(a *Auth, id, raw string) error {
+	name, err := deviceName(raw)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return errf(http.StatusBadRequest, "invalid", "名称不能为空")
+	}
+	devs, err := s.db.ListDevices(a.User.ID)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(devs, func(d store.Device) bool { return d.ID == id })
+	if i < 0 {
+		return store.ErrNotFound
+	}
+	if err := s.db.RenameDevice(a.User.ID, id, name); err != nil {
+		return err
+	}
+	s.audit(a, "device_renamed", devs[i].Name+" → "+name)
 	return nil
 }
 
@@ -169,12 +254,42 @@ func (s *Server) handleRevokeDevice(w http.ResponseWriter, r *http.Request, a *A
 	return nil
 }
 
+// handleAudit pages through the security log, newest first:
+//
+//	?limit=1..500 (200) &before=<id> &action=<action> &q=<text>
+//	&all=1   admins only: every user, plus failed logins for unknown names
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request, a *Auth) error {
-	entries, err := s.db.ListAudit(a.User.ID, 200)
+	qv := r.URL.Query()
+	q := store.AuditQuery{UserID: a.User.ID, Action: qv.Get("action"), Limit: 200}
+	var err error
+	if q.Text, err = freeText(qv.Get("q"), 100); err != nil {
+		return err
+	}
+	switch qv.Get("all") {
+	case "", "0":
+	case "1":
+		if !a.User.IsAdmin {
+			return errForbidden
+		}
+		q.All = true
+	default:
+		return errf(http.StatusBadRequest, "bad_query", "all 只能是 0 或 1")
+	}
+	if v := qv.Get("before"); v != "" {
+		if q.Before, err = strconv.ParseInt(v, 10, 64); err != nil || q.Before <= 0 {
+			return errf(http.StatusBadRequest, "bad_query", "before 参数无效")
+		}
+	}
+	if v := qv.Get("limit"); v != "" {
+		if q.Limit, err = strconv.Atoi(v); err != nil || q.Limit < 1 || q.Limit > 500 {
+			return errf(http.StatusBadRequest, "bad_query", "limit 必须在 1 到 500 之间")
+		}
+	}
+	entries, total, more, err := s.db.ListAudit(q)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "total": total, "has_more": more})
 	return nil
 }
 

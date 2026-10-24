@@ -114,8 +114,13 @@ func TestLANRevokeReachesRelayQuickly(t *testing.T) {
 
 func enrollLAN(t *testing.T, e *relayEnv) enrollBundle {
 	t.Helper()
-	req, _ := http.NewRequest("POST", e.lan.base+"/api/v1/relay/enroll", nil)
-	req.Header.Set("Authorization", "Bearer "+e.lan.token)
+	return enrollOn(t, e.lan)
+}
+
+func enrollOn(t *testing.T, lan *client) enrollBundle {
+	t.Helper()
+	req, _ := http.NewRequest("POST", lan.base+"/api/v1/relay/enroll", nil)
+	req.Header.Set("Authorization", "Bearer "+lan.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

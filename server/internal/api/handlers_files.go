@@ -83,6 +83,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request, a *A
 		if err != nil {
 			return err
 		}
+		s.audit(a, "folder_created", s.where(a, n))
 		writeJSON(w, http.StatusCreated, n)
 		return nil
 	}
@@ -95,6 +96,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request, a *A
 	if err != nil {
 		return err
 	}
+	s.audit(a, "folder_created", s.where(a, n))
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	writeJSON(w, http.StatusCreated, n)
 	return nil
@@ -121,16 +123,20 @@ func (s *Server) patchNode(a *Auth, id string, p nodePatch) (store.Node, error) 
 		if n, err = s.db.Move(a.User.ID, id, *p.ParentID, true); err != nil {
 			return n, err
 		}
+		s.audit(a, "moved", s.where(a, n))
 	}
 	if p.Name != nil && *p.Name != n.Name {
+		old := n.Name
 		if n, err = s.db.Rename(a.User.ID, id, strings.TrimSpace(*p.Name)); err != nil {
 			return n, err
 		}
+		s.audit(a, "renamed", old+" → "+n.Name)
 	}
 	if p.CategoryID != nil && *p.CategoryID != n.CategoryID {
 		if n, err = s.db.SetCategory(a.User.ID, id, *p.CategoryID); err != nil {
 			return n, err
 		}
+		s.audit(a, "category_set", n.Name)
 	}
 	if p.Timeline != nil && *p.Timeline != n.Timeline {
 		if err = s.db.SetTimeline(a.User.ID, id, *p.Timeline); err != nil {
@@ -163,6 +169,7 @@ func (s *Server) trashNode(a *Auth, id string) error {
 	if err != nil {
 		return err
 	}
+	s.audit(a, "trashed", s.where(a, n))
 	s.hub.Publish(a.User.ID, Event{Type: "node.trashed", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	return nil
 }
@@ -300,21 +307,35 @@ func (s *Server) handleWalk(w http.ResponseWriter, r *http.Request, a *Auth) err
 	return nil
 }
 
-func pageArgs(r *http.Request) (before int64, limit int) {
+func pageArgs(r *http.Request) (before int64, limit int, err error) {
+	q := r.URL.Query()
 	before = time.Now().UnixMilli() + 1
-	if b, err := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64); err == nil && b > 0 {
-		before = b
+	if v := q.Get("before"); v != "" {
+		if before, err = strconv.ParseInt(v, 10, 64); err != nil || before <= 0 {
+			return 0, 0, errf(http.StatusBadRequest, "bad_query", "before 参数无效")
+		}
 	}
 	limit = 100
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
-		limit = min(l, 500)
+	if v := q.Get("limit"); v != "" {
+		if limit, err = strconv.Atoi(v); err != nil || limit < 1 || limit > 500 {
+			return 0, 0, errf(http.StatusBadRequest, "bad_query", "limit 必须在 1 到 500 之间")
+		}
 	}
-	return
+	return before, limit, nil
 }
 
 func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request, a *Auth) error {
-	before, limit := pageArgs(r)
-	nodes, err := s.db.Timeline(a.User.ID, before, limit, r.URL.Query().Get("category"))
+	before, limit, err := pageArgs(r)
+	if err != nil {
+		return err
+	}
+	cat := r.URL.Query().Get("category")
+	if cat != "" && cat != "none" {
+		if _, err := s.db.Category(a.User.ID, cat); err != nil {
+			return err
+		}
+	}
+	nodes, err := s.db.Timeline(a.User.ID, before, limit, cat)
 	if err != nil {
 		return err
 	}
@@ -323,7 +344,13 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request, a *Auth)
 }
 
 func (s *Server) handleTagged(w http.ResponseWriter, r *http.Request, a *Auth) error {
-	before, limit := pageArgs(r)
+	before, limit, err := pageArgs(r)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Category(a.User.ID, r.PathValue("category")); err != nil {
+		return err
+	}
 	nodes, err := s.db.Tagged(a.User.ID, r.PathValue("category"), before, limit)
 	if err != nil {
 		return err
@@ -333,7 +360,10 @@ func (s *Server) handleTagged(w http.ResponseWriter, r *http.Request, a *Auth) e
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request, a *Auth) error {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	q, err := freeText(r.URL.Query().Get("q"), 100)
+	if err != nil {
+		return err
+	}
 	if q == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []store.Node{}})
 		return nil
@@ -372,6 +402,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, a *Auth) 
 	if err != nil {
 		return err
 	}
+	s.audit(a, "restored", s.where(a, n))
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	writeJSON(w, http.StatusOK, n)
 	return nil
@@ -422,6 +453,9 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request, a 
 		return err
 	}
 	c, err := s.db.CreateCategory(a.User.ID, req.Name, req.Color, req.Icon)
+	if err == nil {
+		s.audit(a, "category_created", c.Name)
+	}
 	if errors.Is(err, store.ErrConflict) {
 		return errf(http.StatusConflict, "name_conflict", "已有同名分类")
 	}
@@ -439,6 +473,9 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request, a 
 		return err
 	}
 	c, err := s.db.UpdateCategory(a.User.ID, r.PathValue("id"), p)
+	if err == nil {
+		s.audit(a, "category_updated", c.Name)
+	}
 	if errors.Is(err, store.ErrConflict) {
 		return errf(http.StatusConflict, "name_conflict", "已有同名分类")
 	}
@@ -451,9 +488,14 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request, a 
 }
 
 func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request, a *Auth) error {
-	if err := s.db.DeleteCategory(a.User.ID, r.PathValue("id")); err != nil {
+	c, err := s.db.Category(a.User.ID, r.PathValue("id"))
+	if err != nil {
 		return err
 	}
+	if err := s.db.DeleteCategory(a.User.ID, c.ID); err != nil {
+		return err
+	}
+	s.audit(a, "category_deleted", c.Name)
 	s.hub.Publish(a.User.ID, Event{Type: "category.changed", DeviceID: a.Device.ID})
 	w.WriteHeader(http.StatusNoContent)
 	return nil

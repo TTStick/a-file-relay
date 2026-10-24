@@ -193,6 +193,7 @@ func boolInt(b bool) int {
 
 type AuditEntry struct {
 	ID       int64  `json:"id"`
+	User     string `json:"user,omitempty"` // only in the all-users view; "" = no account matched
 	DeviceID string `json:"device_id"`
 	Action   string `json:"action"`
 	Detail   string `json:"detail"`
@@ -205,22 +206,72 @@ func (db *DB) Audit(userID, deviceID, action, detail, ip string) {
 		userID, deviceID, action, detail, ip, Now())
 }
 
-func (db *DB) ListAudit(userID string, limit int) ([]AuditEntry, error) {
-	rows, err := db.Query(`SELECT id, device_id, action, detail, ip, at FROM audit
-		WHERE user_id = ? ORDER BY id DESC LIMIT ?`, userID, limit)
+// AuditQuery picks audit entries, newest first.
+type AuditQuery struct {
+	UserID string
+	All    bool   // every user, plus entries that matched no account (admins)
+	Action string // exact action
+	Text   string // substring of the action, detail or IP
+	Before int64  // only entries with a smaller id (paging); 0 = from the newest
+	Limit  int
+}
+
+// ListAudit returns one page of entries, the number of entries matching the
+// filter in total, and whether there are older ones after this page.
+func (db *DB) ListAudit(q AuditQuery) ([]AuditEntry, int, bool, error) {
+	var where []string
+	var args []any
+	if !q.All {
+		where = append(where, "a.user_id = ?")
+		args = append(args, q.UserID)
+	}
+	if q.Action != "" {
+		where = append(where, "a.action = ?")
+		args = append(args, q.Action)
+	}
+	if q.Text != "" {
+		like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q.Text) + "%"
+		where = append(where, `(a.action LIKE ? ESCAPE '\' OR a.detail LIKE ? ESCAPE '\' OR a.ip LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like)
+	}
+	cond := ""
+	if len(where) > 0 {
+		cond = " WHERE " + strings.Join(where, " AND ")
+	}
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit a`+cond, args...).Scan(&total); err != nil {
+		return nil, 0, false, err
+	}
+	if q.Before > 0 {
+		if cond == "" {
+			cond = " WHERE a.id < ?"
+		} else {
+			cond += " AND a.id < ?"
+		}
+		args = append(args, q.Before)
+	}
+	rows, err := db.Query(`SELECT a.id, COALESCE(u.username, ''), a.device_id, a.action, a.detail, a.ip, a.at
+		FROM audit a LEFT JOIN users u ON u.id = a.user_id`+cond+` ORDER BY a.id DESC LIMIT ?`, append(args, q.Limit+1)...)
 	if err != nil {
-		return nil, err
+		return nil, 0, false, err
 	}
 	defer rows.Close()
 	out := []AuditEntry{}
 	for rows.Next() {
 		var e AuditEntry
-		if err := rows.Scan(&e.ID, &e.DeviceID, &e.Action, &e.Detail, &e.IP, &e.At); err != nil {
-			return nil, err
+		if err := rows.Scan(&e.ID, &e.User, &e.DeviceID, &e.Action, &e.Detail, &e.IP, &e.At); err != nil {
+			return nil, 0, false, err
+		}
+		if !q.All {
+			e.User = ""
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	more := len(out) > q.Limit
+	if more {
+		out = out[:q.Limit]
+	}
+	return out, total, more, rows.Err()
 }
 
 func (db *DB) PruneAudit(olderThan int64) {

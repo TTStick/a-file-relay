@@ -98,6 +98,7 @@ type Writer struct {
 	received int64
 	h        hash.Hash
 	buf      []byte
+	dropped  int
 }
 
 // Create starts a new blob in the temp area.
@@ -202,6 +203,10 @@ func (w *Writer) Received() int64 { return w.received }
 
 func (w *Writer) Done() bool { return w.received == w.size }
 
+// Dropped is how many bytes at the end of the last Fill were thrown away
+// because they didn't make up a whole segment.
+func (w *Writer) Dropped() int { return w.dropped }
+
 func (w *Writer) HashState() []byte {
 	b, _ := w.h.(encoding.BinaryMarshaler).MarshalBinary()
 	return b
@@ -217,6 +222,7 @@ func (w *Writer) Fill(r io.Reader) error {
 	if w.buf == nil {
 		w.buf = make([]byte, SegSize)
 	}
+	w.dropped = 0
 	var readErr error
 	for w.received < w.size {
 		want := min(int64(SegSize), w.size-w.received)
@@ -230,6 +236,7 @@ func (w *Writer) Fill(r io.Reader) error {
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 			readErr = err
 		}
+		w.dropped = n
 		break
 	}
 	if err := w.f.Sync(); err != nil {

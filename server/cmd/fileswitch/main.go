@@ -172,8 +172,11 @@ func listen(ctx context.Context, log *slog.Logger, cfg *config.Config, h http.Ha
 		Handler:           h,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    64 << 10,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelDebug),
+		MaxHeaderBytes:    16 << 10,
+		// let "OPTIONS *" reach our handler (and its auth and headers) instead
+		// of Go's built-in reply
+		DisableGeneralOptionsHandler: true,
+		ErrorLog:                     slog.NewLogLogger(log.Handler(), slog.LevelDebug),
 	}
 	if tlsOn {
 		cert, err := tlsutil.Load(filepath.Join(cfg.DataDir, "tls"), cfg.TLSCert, cfg.TLSKey, cfg.TLSHosts)

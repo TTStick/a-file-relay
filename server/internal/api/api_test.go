@@ -84,7 +84,7 @@ func setup(t *testing.T) (*client, *Server) {
 }
 
 func login(c *client, device string) string {
-	res := c.do("POST", "/api/v1/auth/login", map[string]string{"username": "alice", "password": "password123", "device_name": device, "platform": "test"}, 200)
+	res := c.do("POST", "/api/v1/auth/login", map[string]string{"username": "alice", "password": "password123", "device_name": device, "platform": "macos"}, 200)
 	return res["token"].(string)
 }
 
@@ -137,12 +137,14 @@ func TestEndToEnd(t *testing.T) {
 	uid := up["upload"].(map[string]any)["id"].(string)
 	chunk := int(up["chunk_size"].(float64))
 	c.do("PUT", "/api/v1/uploads/"+uid+"?offset=5", big[:10], 409)
-	// a chunk that is cut off mid-segment keeps only whole segments
-	r := c.do("PUT", "/api/v1/uploads/"+uid+"?offset=0", big[:blob.SegSize*3+100], 200)
-	off := int(r["received"].(float64))
-	if off != blob.SegSize*3 {
-		t.Fatalf("received %d", off)
+	// a chunk that would end mid-segment is refused before anything is stored
+	c.do("PUT", "/api/v1/uploads/"+uid+"?offset=0", big[:blob.SegSize*3+100], 400)
+	st := c.do("GET", "/api/v1/uploads/"+uid, nil, 200)
+	off := int(st["upload"].(map[string]any)["received"].(float64))
+	if off != 0 {
+		t.Fatalf("received %d after a refused chunk", off)
 	}
+	var r map[string]any
 	for off < len(big) {
 		end := min(off+chunk, len(big))
 		r = c.do("PUT", fmt.Sprintf("/api/v1/uploads/%s?offset=%d", uid, off), big[off:end], 200)

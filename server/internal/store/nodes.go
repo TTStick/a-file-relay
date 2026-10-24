@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"strings"
 	"unicode/utf8"
@@ -130,12 +131,32 @@ func ValidName(name string) bool {
 			return false
 		}
 	}
+	// A name that turns into "." / ".." or gains a separator once it is
+	// percent-decoded is never a real file name, and anything downstream that
+	// decodes names (a browser, an unzip tool) could be misled by it.
+	for d, i := name, 0; i < 3 && strings.Contains(d, "%"); i++ {
+		u, err := url.PathUnescape(d)
+		if err != nil || u == d {
+			break
+		}
+		if u == "." || u == ".." || strings.ContainsAny(u, "/\\\x00") {
+			return false
+		}
+		d = u
+	}
 	return true
 }
 
+// ValidMTime: 0 means unknown (stored as now); otherwise milliseconds since
+// 1970 and at most a day ahead, to allow for clock skew.
+func ValidMTime(ms int64) bool { return ms >= 0 && ms <= Now()+24*60*60*1000 }
+
 // SplitRelPath validates a '/'-separated relative path and returns its components.
 func SplitRelPath(rel string) ([]string, error) {
-	rel = strings.Trim(rel, "/")
+	if strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, "\\") {
+		return nil, fmt.Errorf("%w: path must be relative", ErrInvalid)
+	}
+	rel = strings.TrimSuffix(rel, "/")
 	if rel == "" {
 		return nil, ErrInvalid
 	}
@@ -275,8 +296,11 @@ func requireDir(q querier, userID, id string) error {
 func insertNode(q querier, userID, parentID, name string, isDir bool, m Meta, f FileInfo) (string, error) {
 	now := Now()
 	id := NewID()
+	if !ValidMTime(m.MTime) {
+		return "", fmt.Errorf("%w: bad mtime", ErrInvalid)
+	}
 	mtime := m.MTime
-	if mtime <= 0 {
+	if mtime == 0 {
 		mtime = now
 	}
 	var cat any

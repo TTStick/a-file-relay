@@ -255,7 +255,7 @@ func (a *relayAgent) cycle(ctx context.Context) (bool, error) {
 	if err := a.call(ctx, http.MethodGet, "/n/v1/poll", nil, &poll, 64<<20); err != nil {
 		return false, err
 	}
-	worked := len(poll.Ops) > 0 || len(poll.Pairs) > 0
+	worked := len(poll.Pairs) > 0
 	var ack struct {
 		Ops   []int64  `json:"ops"`
 		Pairs []string `json:"pairs"`
@@ -267,8 +267,17 @@ func (a *relayAgent) cycle(ctx context.Context) (bool, error) {
 		ack.Pairs = append(ack.Pairs, p.Lookup)
 	}
 	for _, o := range poll.Ops {
+		// Ops for a space this NAS doesn't have belong to another NAS on the
+		// same relay token. Acknowledging them would delete them from the
+		// relay before their NAS sees them, so leave them alone.
+		if reRelayID.MatchString(o.Space) {
+			if _, err := a.s.db.UserBySpace(o.Space); errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+		}
 		a.handleOp(ctx, o)
 		ack.Ops = append(ack.Ops, o.Seq)
+		worked = true
 	}
 	if worked {
 		if err := a.call(ctx, http.MethodPost, "/n/v1/ack", ack, nil, 0); err != nil {
@@ -454,12 +463,20 @@ func (a *relayAgent) handlePair(ctx context.Context, p pollPair) error {
 	if err != nil {
 		return err
 	}
-	name := cleanLabel(req.DeviceName, 64)
+	name, err := deviceName(req.DeviceName)
+	if err != nil {
+		return err
+	}
+	platform, err := platformName(req.Platform)
+	if err != nil {
+		return err
+	}
 	if name == "" {
 		name = "新设备"
 	}
+	name = a.s.uniqueDeviceName(u.ID, name)
 	bundle, err := a.s.enroll(u, "", func(_ []byte, th string) (string, error) {
-		d, err := a.s.db.CreateRemoteDevice(u.ID, name, cleanLabel(req.Platform, 32), []byte{0}, th)
+		d, err := a.s.db.CreateRemoteDevice(u.ID, name, platform, []byte{0}, th)
 		return d.ID, err
 	})
 	if err != nil {
@@ -579,7 +596,7 @@ func (a *relayAgent) handleOp(ctx context.Context, o pollOp) {
 		opErr = errf(429, "throttled", "操作过于频繁")
 	default:
 		a.s.touch(rd.ID, "relay")
-		data, opErr = a.apply(ctx, &Auth{User: u, Device: rd.Device}, o.Space, op)
+		data, opErr = a.apply(ctx, &Auth{User: u, Device: rd.Device, IP: "relay"}, o.Space, op)
 	}
 	reply := map[string]any{"op": o.ID, "ok": opErr == nil}
 	if opErr != nil {
@@ -631,6 +648,7 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
+		s.audit(au, "folder_created", s.where(au, n))
 		s.hub.Publish(uid, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: au.Device.ID})
 		return map[string]string{"id": n.ID}, nil
 	case "patch":
@@ -663,6 +681,7 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
+		s.audit(au, "restored", s.where(au, n))
 		s.hub.Publish(uid, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: au.Device.ID})
 		return nil, nil
 	case "purge", "empty_trash":
@@ -680,7 +699,11 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 			return nil, err
 		}
 		s.removeBlobs(blobs)
-		s.db.Audit(uid, au.Device.ID, "trash_purged", "relay", "relay")
+		if op.T == "purge" {
+			s.audit(au, "trash_purged", op.ID)
+		} else {
+			s.audit(au, "trash_emptied", strconv.Itoa(len(blobs)))
+		}
 		s.hub.Publish(uid, Event{Type: "trash.changed", DeviceID: au.Device.ID})
 		return nil, nil
 	case "cat_create":
@@ -688,18 +711,26 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
+		s.audit(au, "category_created", c.Name)
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return map[string]string{"id": c.ID}, nil
 	case "cat_update":
-		if _, err := s.db.UpdateCategory(uid, op.ID, store.CategoryPatch{Name: op.Name, Color: op.Color, Icon: op.Icon, FolderID: op.FolderID}); err != nil {
+		c, err := s.db.UpdateCategory(uid, op.ID, store.CategoryPatch{Name: op.Name, Color: op.Color, Icon: op.Icon, FolderID: op.FolderID})
+		if err != nil {
 			return nil, err
 		}
+		s.audit(au, "category_updated", c.Name)
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return nil, nil
 	case "cat_delete":
+		c, err := s.db.Category(uid, op.ID)
+		if err != nil {
+			return nil, err
+		}
 		if err := s.db.DeleteCategory(uid, op.ID); err != nil {
 			return nil, err
 		}
+		s.audit(au, "category_deleted", c.Name)
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return nil, nil
 	case "cat_reorder":
@@ -716,11 +747,7 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 	case "fetch":
 		return a.fetch(au, op.IDs)
 	case "device_rename":
-		name := cleanLabel(str(op.Name), 64)
-		if name == "" {
-			return nil, errf(400, "invalid", "名称不能为空")
-		}
-		return nil, s.db.RenameDevice(uid, op.ID, name)
+		return nil, s.renameDevice(au, op.ID, str(op.Name))
 	case "device_revoke":
 		if err := s.db.DeleteDevice(uid, op.ID); err != nil {
 			return nil, err
@@ -766,6 +793,7 @@ func (a *relayAgent) ingest(ctx context.Context, au *Auth, op relayOp) (any, err
 		if err != nil {
 			return nil, err
 		}
+		s.audit(au, "folder_created", s.where(au, top))
 		s.hub.Publish(au.User.ID, Event{Type: "node.created", Node: &top, ParentID: top.ParentID, DeviceID: au.Device.ID})
 		base, timeline, cat = top.ID, false, ""
 		result["folder_id"] = top.ID

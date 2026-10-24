@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +24,7 @@ import (
 	"fileswitch/internal/store"
 )
 
-const Version = "1.1.1"
+const Version = "1.1.2"
 
 type Server struct {
 	cfg     *config.Config
@@ -43,6 +47,9 @@ type Server struct {
 
 	relay     *relayAgent
 	relayKick chan struct{}
+
+	// bodyIdle: how long a request body may stall before the request fails.
+	bodyIdle time.Duration
 }
 
 func New(cfg *config.Config, db *store.DB, blobs *blob.Store, log *slog.Logger, tlsOn bool) *Server {
@@ -52,6 +59,7 @@ func New(cfg *config.Config, db *store.DB, blobs *blob.Store, log *slog.Logger, 
 		hub: NewHub(), limiter: auth.NewLimiter(), dummyHash: dh,
 		busy: map[string]bool{}, seen: map[string]time.Time{},
 		relayKick: make(chan struct{}, 1),
+		bodyIdle:  time.Minute,
 	}
 	// Local changes are pushed to the relay promptly (still NAS-initiated).
 	s.hub.onPublish = s.kickRelay
@@ -63,8 +71,8 @@ func (s *Server) Handler() http.Handler {
 	a := s.authed
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	mux.HandleFunc("GET /api/v1/info", s.handleInfo)
-	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	mux.HandleFunc("GET /api/v1/info", s.public(s.handleInfo))
+	mux.HandleFunc("POST /api/v1/auth/login", s.public(s.handleLogin))
 
 	mux.Handle("POST /api/v1/auth/logout", a(s.handleLogout))
 	mux.Handle("GET /api/v1/auth/me", a(s.handleMe))
@@ -115,7 +123,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/admin/users/{id}", a(s.admin(s.handleDeleteUser)))
 	mux.Handle("POST /api/v1/admin/users/{id}/password", a(s.admin(s.handleResetPassword)))
 
-	return s.middleware(mux)
+	return s.middleware(s.gate(mux))
 }
 
 // --- plumbing ---
@@ -123,6 +131,79 @@ func (s *Server) Handler() http.Handler {
 type Auth struct {
 	User   store.User
 	Device store.Device
+	IP     string // "relay" for operations that came through the relay
+}
+
+// Endpoints that answer without a device token. Every other request is
+// authenticated before it is routed, so an anonymous caller gets the same 401
+// whether a path exists or not and can't map the API through 404/405 answers.
+var publicRoutes = map[string]bool{"GET /healthz": true, "GET /api/v1/info": true, "POST /api/v1/auth/login": true}
+
+// Query parameters each endpoint understands. Anything else is an error
+// rather than being silently ignored.
+var queryParams = map[string][]string{
+	"GET /api/v1/nodes":             {"parent", "dirs"},
+	"GET /api/v1/timeline":          {"before", "limit", "category"},
+	"GET /api/v1/tagged/{category}": {"before", "limit"},
+	"GET /api/v1/search":            {"q"},
+	"GET /api/v1/audit":             {"before", "limit", "action", "q", "all"},
+	"PUT /api/v1/uploads/{id}":      {"offset"},
+	"PUT /api/v1/files":             {"parent_id", "category_id", "path", "timeline", "conflict", "size", "mtime"},
+}
+
+type authKey struct{}
+
+func (s *Server) gate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Bodies must state their length. Refusing chunked HTTP/1.1 bodies also
+		// settles requests carrying both Content-Length and Transfer-Encoding,
+		// which a proxy in front might frame differently than we do.
+		if r.ProtoMajor == 1 && len(r.TransferEncoding) > 0 {
+			s.writeErr(w, r, errf(http.StatusLengthRequired, "length_required", "请求必须带 Content-Length"))
+			return
+		}
+		// url.Query() drops every parameter when the query has a bad escape
+		// or a bare ';', which would quietly turn e.g. parent_id into "root".
+		if _, err := url.ParseQuery(r.URL.RawQuery); err != nil {
+			s.writeErr(w, r, errf(http.StatusBadRequest, "bad_query", "查询参数格式错误"))
+			return
+		}
+		method := r.Method
+		if method == http.MethodHead {
+			method = http.MethodGet
+		}
+		if !publicRoutes[method+" "+r.URL.Path] {
+			au, err := s.authenticate(r)
+			if err != nil {
+				s.writeErr(w, r, err)
+				return
+			}
+			r = r.WithContext(context.WithValue(r.Context(), authKey{}, au))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// checkQuery runs after routing, when r.Pattern names the endpoint.
+func checkQuery(r *http.Request) error {
+	allowed := queryParams[r.Pattern]
+	for k := range r.URL.Query() {
+		if !slices.Contains(allowed, k) {
+			return errf(http.StatusBadRequest, "bad_query", "不支持的参数：%s", k)
+		}
+	}
+	return nil
+}
+
+// public wraps an endpoint that needs no token.
+func (s *Server) public(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := checkQuery(r); err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		h(w, r)
+	}
 }
 
 type handler func(w http.ResponseWriter, r *http.Request, a *Auth) error
@@ -167,10 +248,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// readJSON decodes a request body. Errors name at most the offending field,
+// never Go's own type names.
 func readJSON(r *http.Request, v any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err := dec.Decode(v); err != nil {
-		return errf(http.StatusBadRequest, "bad_json", "请求格式错误: %v", err)
+		var te *json.UnmarshalTypeError
+		var big *http.MaxBytesError
+		switch {
+		case errors.As(err, &te) && te.Field != "":
+			return errf(http.StatusBadRequest, "bad_json", "字段 %s 的类型不对", te.Field)
+		case errors.As(err, &big):
+			return errf(http.StatusRequestEntityTooLarge, "too_large", "请求体太大")
+		default:
+			return errf(http.StatusBadRequest, "bad_json", "请求格式错误")
+		}
 	}
 	return nil
 }
@@ -198,28 +290,74 @@ func lastHop(xff string) string {
 	return strings.TrimSpace(parts[len(parts)-1])
 }
 
+func (s *Server) authenticate(r *http.Request) (*Auth, error) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || tok == "" {
+		return nil, errUnauthorized
+	}
+	dev, err := s.db.DeviceByToken(auth.HashToken(tok))
+	if err != nil {
+		return nil, errUnauthorized
+	}
+	user, err := s.db.User(dev.UserID)
+	if err != nil {
+		return nil, errUnauthorized
+	}
+	ip := s.clientIP(r)
+	s.touch(dev.ID, ip)
+	return &Auth{User: user, Device: dev, IP: ip}, nil
+}
+
 func (s *Server) authed(h handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || tok == "" {
-			s.writeErr(w, r, errUnauthorized)
+		au, _ := r.Context().Value(authKey{}).(*Auth)
+		if au == nil {
+			var err error
+			if au, err = s.authenticate(r); err != nil {
+				s.writeErr(w, r, err)
+				return
+			}
+		}
+		if err := checkQuery(r); err != nil {
+			s.writeErr(w, r, err)
 			return
 		}
-		dev, err := s.db.DeviceByToken(auth.HashToken(tok))
-		if err != nil {
-			s.writeErr(w, r, errUnauthorized)
-			return
-		}
-		user, err := s.db.User(dev.UserID)
-		if err != nil {
-			s.writeErr(w, r, errUnauthorized)
-			return
-		}
-		s.touch(dev.ID, s.clientIP(r))
-		if err := h(w, r, &Auth{User: user, Device: dev}); err != nil {
+		if err := h(w, r, au); err != nil {
 			s.writeErr(w, r, err)
 		}
 	})
+}
+
+// audit records something a device did, for the security log.
+func (s *Server) audit(a *Auth, action, detail string) {
+	s.db.Audit(a.User.ID, a.Device.ID, action, detail, a.IP)
+}
+
+// where is a node's full path for the log, e.g. "/工作/报告.pdf".
+func (s *Server) where(a *Auth, n store.Node) string {
+	ns := []store.Node{n}
+	s.db.FillLocations(a.User.ID, ns)
+	return path.Join("/", ns[0].Location, n.Name)
+}
+
+// idleBody fails a request body that stops arriving, instead of holding the
+// connection open forever (e.g. a chunked upload cut off mid-chunk).
+type idleBody struct {
+	io.ReadCloser
+	rc   *http.ResponseController
+	idle time.Duration
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	b.rc.SetReadDeadline(time.Now().Add(b.idle))
+	n, err := b.ReadCloser.Read(p)
+	// Clear the deadline only once the body is complete. After a failure it
+	// has to stay: before replying, net/http tries to drain what's left of
+	// the body, and without a deadline that read would wait forever.
+	if err == io.EOF {
+		b.rc.SetReadDeadline(time.Time{})
+	}
+	return n, err
 }
 
 // touch records device activity, at most once a minute per device.
@@ -270,6 +408,9 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = &idleBody{ReadCloser: r.Body, rc: http.NewResponseController(w), idle: s.bodyIdle}
+		}
 		sw := &statusWriter{ResponseWriter: w}
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")

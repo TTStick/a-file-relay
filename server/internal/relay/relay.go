@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -161,7 +162,61 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /n/v1/blobs/{id}", n(s.nasDeleteBlob))
 	mux.Handle("PUT /n/v1/pair/{lookup}", n(s.pairRespond))
 
-	return s.middleware(mux)
+	return s.middleware(s.gate(mux))
+}
+
+// gate checks credentials before routing, so an anonymous caller gets the
+// same 401 for every path and can't map the API through 404/405 answers.
+func (s *Server) gate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// see the API server: bodies must state their length
+		if r.ProtoMajor == 1 && len(r.TransferEncoding) > 0 {
+			s.fail(w, r, errf(411, "length required"))
+			return
+		}
+		if _, err := url.ParseQuery(r.URL.RawQuery); err != nil {
+			s.fail(w, r, errf(400, "bad query string"))
+			return
+		}
+		p := r.URL.Path
+		switch {
+		case p == "/healthz" || p == "/r/v1/info" || strings.HasPrefix(p, "/r/v1/pair/"):
+		case strings.HasPrefix(p, "/n/v1/"):
+			if !s.nasToken(r) {
+				s.log.Warn("rejected NAS request with bad token", "ip", s.ip(r))
+				s.reject(w, r, 20)
+				return
+			}
+		default:
+			if _, ok := s.device(r); !ok {
+				s.reject(w, r, 60)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) reject(w http.ResponseWriter, r *http.Request, perTenMinutes int) {
+	if !s.throttle(s.ip(r), perTenMinutes, 10*time.Minute) {
+		s.fail(w, r, errf(429, "too many requests"))
+		return
+	}
+	s.fail(w, r, errf(401, "unauthorized"))
+}
+
+func (s *Server) nasToken(r *http.Request) bool {
+	return subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.cfg.NASToken)) == 1
+}
+
+func (s *Server) device(r *http.Request) (devCtx, bool) {
+	var d devCtx
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || tok == "" {
+		return d, false
+	}
+	err := s.db.QueryRow(`SELECT space, device_id FROM devices WHERE token_hash = ?`, tokenHash(tok)).Scan(&d.space, &d.device)
+	return d, err == nil
 }
 
 // --- plumbing ---
@@ -263,18 +318,9 @@ func tokenHash(tok string) string {
 
 func (s *Server) client(h func(http.ResponseWriter, *http.Request, devCtx) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		var d devCtx
-		if ok && tok != "" {
-			err := s.db.QueryRow(`SELECT space, device_id FROM devices WHERE token_hash = ?`, tokenHash(tok)).Scan(&d.space, &d.device)
-			ok = err == nil
-		}
+		d, ok := s.device(r)
 		if !ok {
-			if !s.throttle(s.ip(r), 60, 10*time.Minute) {
-				s.fail(w, r, errf(429, "too many requests"))
-				return
-			}
-			s.fail(w, r, errf(401, "unauthorized"))
+			s.reject(w, r, 60)
 			return
 		}
 		if err := h(w, r, d); err != nil {
@@ -284,15 +330,9 @@ func (s *Server) client(h func(http.ResponseWriter, *http.Request, devCtx) error
 }
 
 func (s *Server) nas(h func(http.ResponseWriter, *http.Request) error) http.Handler {
-	want := []byte("Bearer " + s.cfg.NASToken)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
-			if !s.throttle(s.ip(r), 20, 10*time.Minute) {
-				s.fail(w, r, errf(429, "too many requests"))
-				return
-			}
-			s.log.Warn("rejected NAS request with bad token", "ip", s.ip(r))
-			s.fail(w, r, errf(401, "unauthorized"))
+		if !s.nasToken(r) {
+			s.reject(w, r, 20)
 			return
 		}
 		s.mu.Lock()

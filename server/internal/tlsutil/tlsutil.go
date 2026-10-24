@@ -56,9 +56,9 @@ func generate(dir, certFile, keyFile string, hosts []string) error {
 		DNSNames:              []string{"localhost"},
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
 	}
-	if h, err := os.Hostname(); err == nil {
-		tmpl.DNSNames = append(tmpl.DNSNames, h)
-	}
+	// Clients pin the fingerprint, so the names only matter to tools like curl.
+	// Only what FS_TLS_HOSTS lists goes in; the machine's own hostname would
+	// tell anyone who connects what the box is called inside.
 	for _, h := range hosts {
 		if ip := net.ParseIP(h); ip != nil {
 			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)

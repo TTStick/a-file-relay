@@ -4,6 +4,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 
@@ -54,6 +55,9 @@ func (s *Server) prepare(a *Auth, p *uploadParams) error {
 	}
 	if p.Size < 0 {
 		return errf(http.StatusBadRequest, "invalid", "无效的文件大小")
+	}
+	if !store.ValidMTime(p.MTime) {
+		return errf(http.StatusBadRequest, "invalid", "无效的修改时间")
 	}
 	if err := s.roomFor(a.User.ID, p.Size); err != nil {
 		return err
@@ -139,22 +143,48 @@ func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request, a *Au
 		})
 		return nil
 	}
+	// Refuse a chunk that can't be stored as sent before writing any of it.
+	// Only the last chunk may end inside a 64 KiB segment.
+	if r.ContentLength >= 0 {
+		end := offset + r.ContentLength
+		if end > u.Size {
+			return errf(http.StatusBadRequest, "too_large", "数据超出声明的文件大小")
+		}
+		if end < u.Size && end%blob.SegSize != 0 {
+			return errf(http.StatusBadRequest, "unaligned", "除最后一块外，每块大小必须是 64 KiB 的整数倍")
+		}
+	}
 	bw, err := s.blobs.Resume(id, u.Size, u.Received, u.HashState, u.Enc)
 	if err != nil {
 		return err
 	}
 	fillErr := bw.Fill(r.Body)
 	bw.Close()
+	if errors.Is(fillErr, blob.ErrTooLarge) {
+		// The request as a whole was wrong: keep none of it. The next Resume
+		// truncates the temp file back to the recorded progress.
+		return errf(http.StatusBadRequest, "too_large", "数据超出声明的文件大小")
+	}
 	// Whatever arrived intact is durable on disk; record it even if the
 	// connection broke so the client can resume from there.
 	if err := s.db.SetUploadProgress(id, u.Received, bw.Received(), bw.HashState()); err != nil {
 		return err
 	}
-	if errors.Is(fillErr, blob.ErrTooLarge) {
-		return errf(http.StatusBadRequest, "too_large", "数据超出声明的文件大小")
-	}
 	if fillErr != nil {
 		s.log.Info("upload chunk interrupted", "upload", id, "received", bw.Received(), "err", fillErr)
+		if errors.Is(fillErr, os.ErrDeadlineExceeded) {
+			writeJSON(w, http.StatusRequestTimeout, map[string]any{
+				"error":    map[string]string{"code": "timeout", "message": "数据停止传输超过时限，请从 received 处继续"},
+				"received": bw.Received(),
+			})
+		}
+		return nil
+	}
+	if bw.Dropped() > 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":    map[string]string{"code": "unaligned", "message": "分块在 64 KiB 段中间结束，这一段没有保存，请从 received 处重传"},
+			"received": bw.Received(),
+		})
 		return nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"received": bw.Received(), "size": u.Size})
@@ -223,6 +253,7 @@ func (s *Server) finish(a *Auth, blobID string, enc bool, sum string, p uploadPa
 	if replaced != nil {
 		s.hub.Publish(a.User.ID, Event{Type: "node.trashed", Node: replaced, ParentID: replaced.ParentID, DeviceID: a.Device.ID})
 	}
+	s.audit(a, "file_uploaded", s.where(a, n))
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	if p.CategoryID != "" {
 		s.hub.Publish(a.User.ID, Event{Type: "category.changed", DeviceID: a.Device.ID})
@@ -260,7 +291,11 @@ func (s *Server) handleDirectUpload(w http.ResponseWriter, r *http.Request, a *A
 	if r.ContentLength >= 0 && r.ContentLength != p.Size {
 		return errf(http.StatusBadRequest, "invalid", "Content-Length 与 size 不一致")
 	}
-	p.MTime, _ = strconv.ParseInt(q.Get("mtime"), 10, 64)
+	if v := q.Get("mtime"); v != "" {
+		if p.MTime, err = strconv.ParseInt(v, 10, 64); err != nil {
+			return errf(http.StatusBadRequest, "invalid", "无效的修改时间")
+		}
+	}
 	if err := s.prepare(a, &p); err != nil {
 		return err
 	}
