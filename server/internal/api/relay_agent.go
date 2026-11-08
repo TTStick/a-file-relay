@@ -661,7 +661,7 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
-		s.audit(au, "folder_created", s.where(au, n))
+		s.audit(au, "folder_created")
 		s.hub.Publish(uid, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: au.Device.ID})
 		return map[string]string{"id": n.ID}, nil
 	case "patch":
@@ -694,7 +694,7 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
-		s.audit(au, "restored", s.where(au, n))
+		s.audit(au, "restored")
 		s.hub.Publish(uid, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: au.Device.ID})
 		return nil, nil
 	case "purge", "empty_trash":
@@ -713,9 +713,9 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		}
 		s.removeBlobs(blobs)
 		if op.T == "purge" {
-			s.audit(au, "trash_purged", op.ID)
+			s.audit(au, "trash_purged")
 		} else {
-			s.audit(au, "trash_emptied", strconv.Itoa(len(blobs)))
+			s.audit(au, "trash_emptied")
 		}
 		s.hub.Publish(uid, Event{Type: "trash.changed", DeviceID: au.Device.ID})
 		return nil, nil
@@ -724,26 +724,21 @@ func (a *relayAgent) apply(ctx context.Context, au *Auth, space string, op relay
 		if err != nil {
 			return nil, err
 		}
-		s.audit(au, "category_created", c.Name)
+		s.audit(au, "category_created")
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return map[string]string{"id": c.ID}, nil
 	case "cat_update":
-		c, err := s.db.UpdateCategory(uid, op.ID, store.CategoryPatch{Name: op.Name, Color: op.Color, Icon: op.Icon, FolderID: op.FolderID})
-		if err != nil {
+		if _, err := s.db.UpdateCategory(uid, op.ID, store.CategoryPatch{Name: op.Name, Color: op.Color, Icon: op.Icon, FolderID: op.FolderID}); err != nil {
 			return nil, err
 		}
-		s.audit(au, "category_updated", c.Name)
+		s.audit(au, "category_updated")
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return nil, nil
 	case "cat_delete":
-		c, err := s.db.Category(uid, op.ID)
-		if err != nil {
-			return nil, err
-		}
 		if err := s.db.DeleteCategory(uid, op.ID); err != nil {
 			return nil, err
 		}
-		s.audit(au, "category_deleted", c.Name)
+		s.audit(au, "category_deleted")
 		s.hub.Publish(uid, Event{Type: "category.changed", DeviceID: au.Device.ID})
 		return nil, nil
 	case "cat_reorder":
@@ -806,7 +801,7 @@ func (a *relayAgent) ingest(ctx context.Context, au *Auth, op relayOp) (any, err
 		if err != nil {
 			return nil, err
 		}
-		s.audit(au, "folder_created", s.where(au, top))
+		s.audit(au, "folder_created")
 		s.hub.Publish(au.User.ID, Event{Type: "node.created", Node: &top, ParentID: top.ParentID, DeviceID: au.Device.ID})
 		base, timeline, cat = top.ID, false, ""
 		result["folder_id"] = top.ID
@@ -833,7 +828,7 @@ func (a *relayAgent) ingest(ctx context.Context, au *Auth, op relayOp) (any, err
 		}
 		if err != nil {
 			failed[f.Rel] = userMessage(err)
-			a.s.log.Warn("relay: upload rejected", "file", f.Rel, "err", err)
+			a.s.log.Warn("relay: upload rejected", "err", bareErr(err))
 			continue
 		}
 		created++
@@ -905,7 +900,7 @@ func (a *relayAgent) fetch(au *Auth, ids []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	until := time.Now().Add(3 * 24 * time.Hour).UnixMilli()
+	until := time.Now().Add(e2e.Retention).UnixMilli()
 	n := 0
 	for _, id := range ids {
 		node, err := a.s.db.Node(au.User.ID, id)
@@ -1087,7 +1082,7 @@ func (a *relayAgent) snapshot(u store.User, kid uint32) ([]byte, error) {
 		V: 1, Kid: kid, User: u, Nodes: nodes, Trash: trash, Categories: cats, Devices: devs, Stats: st,
 		Server: map[string]any{"name": s.cfg.ServerName, "version": Version, "encrypted_at_rest": s.blobs.Encrypted()},
 		Policy: map[string]any{"remote_purge": s.cfg.RemotePurge, "remote_pairing": s.cfg.RemotePairing,
-			"remote_max_file": s.cfg.RemoteMaxFile, "cache_days": s.cfg.CacheDays},
+			"remote_max_file": s.cfg.RemoteMaxFile},
 	})
 }
 
@@ -1114,7 +1109,9 @@ func (a *relayAgent) reconcileCache(ctx context.Context, space string, u store.U
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].CreatedAt > files[j].CreatedAt })
 	desired := map[string]store.Node{}
-	cutoff := time.Now().AddDate(0, 0, -s.cfg.CacheDays).UnixMilli()
+	// Only files the relay would still be allowed to hold. Anything older
+	// has either expired there already or would be expired and re-sent forever.
+	cutoff := time.Now().Add(-e2e.Retention).UnixMilli()
 	var total int64
 	for _, n := range files {
 		if n.CreatedAt < cutoff {
@@ -1128,7 +1125,8 @@ func (a *relayAgent) reconcileCache(ctx context.Context, space string, u store.U
 	nowMs := time.Now().UnixMilli()
 	for key, e := range pinned {
 		n, ok := byID[e.NodeID]
-		if !ok || e.PinnedUntil < nowMs {
+		// pins made before 1.1.4 run for days; drop them rather than re-send
+		if !ok || e.PinnedUntil < nowMs || e.PinnedUntil > nowMs+e2e.Retention.Milliseconds() {
 			s.db.DeleteRelayCache(u.ID, key)
 			continue
 		}
@@ -1195,7 +1193,7 @@ func (a *relayAgent) pushCache(ctx context.Context) {
 			// a file deleted in the meantime is not worth a warning or a retry
 			failed := err != nil && ctx.Err() == nil && !errors.Is(err, fs.ErrNotExist)
 			if failed {
-				a.s.log.Warn("relay: cache upload failed", "file", j.n.Name, "err", err)
+				a.s.log.Warn("relay: cache upload failed", "err", bareErr(err))
 			}
 			a.mu.Lock()
 			delete(a.cacheBusy, j.key)

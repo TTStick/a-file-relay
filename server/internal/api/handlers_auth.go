@@ -239,7 +239,7 @@ func (s *Server) renameDevice(a *Auth, id, raw string) error {
 	if err := s.db.RenameDevice(a.User.ID, id, name); err != nil {
 		return err
 	}
-	s.audit(a, "device_renamed", devs[i].Name+" → "+name)
+	s.db.Audit(a.User.ID, a.Device.ID, "device_renamed", devs[i].Name+" → "+name, a.IP)
 	return nil
 }
 

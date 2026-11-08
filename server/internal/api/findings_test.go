@@ -366,7 +366,7 @@ func TestDataOperationsAreAudited(t *testing.T) {
 			t.Fatalf("%s missing from the audit log: %v", want, got)
 		}
 	}
-	if details["renamed"] != "a.txt → b.txt" || details["moved"] != "/项目/b.txt" || details["device_renamed"] != "Mac → 工作 Mac" {
+	if details["renamed"] != "" || details["moved"] != "" || details["file_uploaded"] != "" || details["device_renamed"] != "Mac → 工作 Mac" {
 		t.Fatalf("details: %v", details)
 	}
 }

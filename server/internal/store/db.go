@@ -121,7 +121,8 @@ CREATE INDEX IF NOT EXISTS audit_user ON audit(user_id, at);
 func Open(path string) (*DB, error) {
 	dsn := "file:" + path +
 		"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)" +
-		"&_pragma=synchronous(NORMAL)&_txlock=immediate"
+		"&_pragma=synchronous(NORMAL)&_pragma=secure_delete(1)&_pragma=journal_size_limit(0)" +
+		"&_pragma=temp_store(2)&_txlock=immediate"
 	sdb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -136,7 +137,36 @@ func Open(path string) (*DB, error) {
 		sdb.Close()
 		return nil, fmt.Errorf("migrate relay: %w", err)
 	}
+	if err := db.scrubAuditNames(); err != nil {
+		sdb.Close()
+		return nil, fmt.Errorf("scrub audit log: %w", err)
+	}
 	return db, nil
+}
+
+// scrubAuditNames blanks the file names and paths that versions before 1.1.4
+// wrote into the security log, then rewrites the database so the old text
+// doesn't stay behind in free pages. It runs once.
+func (db *DB) scrubAuditNames() error {
+	if done, err := db.Meta("audit_scrubbed"); err != nil || done != "" {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE audit SET detail = '' WHERE detail != '' AND action IN (
+		'file_uploaded', 'folder_created', 'moved', 'renamed', 'trashed', 'restored', 'trash_purged', 'trash_emptied',
+		'category_set', 'category_created', 'category_updated', 'category_deleted')`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`VACUUM`); err != nil {
+		return err
+	}
+	db.TruncateWAL()
+	return db.SetMeta("audit_scrubbed", "1")
+}
+
+// TruncateWAL empties the write-ahead log, which holds full copies of recently
+// changed pages, including the old contents of deleted rows.
+func (db *DB) TruncateWAL() {
+	db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 }
 
 var idEnc = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)

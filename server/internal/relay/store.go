@@ -92,8 +92,12 @@ var errNotFound = errors.New("not found")
 type db struct{ *sql.DB }
 
 func openDB(path string) (*db, error) {
+	// secure_delete zeroes freed pages, so a deleted row is gone from the file
+	// and not merely unlinked from the b-tree. temp_store keeps VACUUM's
+	// scratch copy in memory: the container has no writable /tmp.
 	s, err := sql.Open("sqlite", "file:"+path+
-		"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate")
+		"?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"+
+		"&_pragma=secure_delete(1)&_pragma=journal_size_limit(0)&_pragma=temp_store(2)&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +107,23 @@ func openDB(path string) (*db, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return &db{s}, nil
+}
+
+// compact rewrites the database, clearing free pages left by versions that
+// didn't have secure_delete on.
+func (d *db) compact() error {
+	if _, err := d.Exec(`VACUUM`); err != nil {
+		return err
+	}
+	return d.truncateWAL()
+}
+
+// truncateWAL folds the write-ahead log into the database and empties it. The
+// log holds full copies of recently changed pages, including rows deleted a
+// moment ago.
+func (d *db) truncateWAL() error {
+	_, err := d.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
 }
 
 func now() int64 { return time.Now().UnixMilli() }

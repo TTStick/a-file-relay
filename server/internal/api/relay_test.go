@@ -39,6 +39,7 @@ type relayEnv struct {
 	relayDir string
 	fp       string
 	rc       *http.Client
+	log      *slog.Logger // for NASes added after setup
 }
 
 const nasToken = "test-nas-token-0123456789abcdefghijklmnop"
@@ -48,7 +49,7 @@ func setupRelay(t *testing.T, opts ...func(*config.Config)) *relayEnv {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	relayDir := t.TempDir()
 	rs, err := relay.New(&relay.Config{DataDir: relayDir, NASToken: nasToken, MaxFile: 1 << 30, Quota: 4 << 30,
-		UploadTTL: time.Hour, CacheTTL: time.Hour}, log)
+		Retention: time.Hour}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +66,14 @@ func setupRelay(t *testing.T, opts ...func(*config.Config)) *relayEnv {
 // addNAS starts a NAS (user alice) that syncs with the env's relay.
 func (e *relayEnv) addNAS(opts ...func(*config.Config)) (*Server, *client) {
 	t := e.t
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := e.log
+	if log == nil {
+		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	dir := t.TempDir()
 	cfg := &config.Config{DataDir: dir, TrashDays: 30, ServerName: "test-nas", LAN: true,
 		RelayURL: e.relayURL, RelayToken: nasToken, RelayFingerprint: e.fp,
-		RelayInterval: 50 * time.Millisecond, CacheDays: 7, CacheMaxFile: 64 << 20, CacheMaxTotal: 1 << 30,
+		RelayInterval: 50 * time.Millisecond, CacheMaxFile: 64 << 20, CacheMaxTotal: 1 << 30,
 		RemoteMaxFile: 1 << 30}
 	for _, o := range opts {
 		o(cfg)

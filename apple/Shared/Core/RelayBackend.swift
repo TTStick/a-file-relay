@@ -250,7 +250,7 @@ actor RelayBackend: Backend {
     }
 
     private func expire(_ id: String) {
-        handlers.removeValue(forKey: id)?(.failure(FSError(status: 0, code: "nas_offline", message: "NAS 暂未处理（可能离线），操作会在 NAS 上线后执行")))
+        handlers.removeValue(forKey: id)?(.failure(FSError(status: 0, code: "nas_offline", message: "NAS 暂未处理（可能离线）。中转站最多保留 12 小时，NAS 在此之前上线会继续执行，超过后需要重新操作")))
         onLocal(ServerEvent(type: "relay.status"))
     }
 

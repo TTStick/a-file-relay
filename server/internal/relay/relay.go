@@ -10,7 +10,6 @@
 package relay
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -30,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"fileswitch/internal/e2e"
 	"fileswitch/internal/store"
 )
 
@@ -38,20 +38,8 @@ type Config struct {
 	NASToken   string        // FS_RELAY_NAS_TOKEN
 	MaxFile    int64         // FS_RELAY_MAX_FILE
 	Quota      int64         // FS_RELAY_QUOTA (per space: pending uploads + cache)
-	UploadTTL  time.Duration // FS_RELAY_UPLOAD_TTL
-	CacheTTL   time.Duration // FS_RELAY_CACHE_TTL
+	Retention  time.Duration // how long anything in transit may stay here
 	TrustProxy bool          // FS_TRUST_PROXY
-}
-
-func envDur(key string, def time.Duration) (time.Duration, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return def, nil
-	}
-	if d, err := strconv.Atoi(v); err == nil {
-		return time.Duration(d) * time.Hour, nil // bare number = hours
-	}
-	return time.ParseDuration(v)
 }
 
 func envSize(key string, def int64) (int64, error) {
@@ -72,7 +60,7 @@ func envSize(key string, def int64) (int64, error) {
 }
 
 func LoadConfig(dataDir string, trustProxy bool) (*Config, error) {
-	c := &Config{DataDir: dataDir, NASToken: os.Getenv("FS_RELAY_NAS_TOKEN"), TrustProxy: trustProxy}
+	c := &Config{DataDir: dataDir, NASToken: os.Getenv("FS_RELAY_NAS_TOKEN"), TrustProxy: trustProxy, Retention: e2e.Retention}
 	if len(c.NASToken) < 32 {
 		return nil, errors.New("FS_RELAY_NAS_TOKEN must be set to a random string of at least 32 characters (the NAS uses the same value)")
 	}
@@ -82,12 +70,6 @@ func LoadConfig(dataDir string, trustProxy bool) (*Config, error) {
 	}
 	if c.Quota, err = envSize("FS_RELAY_QUOTA", 50<<30); err != nil {
 		return nil, fmt.Errorf("FS_RELAY_QUOTA: %w", err)
-	}
-	if c.UploadTTL, err = envDur("FS_RELAY_UPLOAD_TTL", 7*24*time.Hour); err != nil {
-		return nil, fmt.Errorf("FS_RELAY_UPLOAD_TTL: %w", err)
-	}
-	if c.CacheTTL, err = envDur("FS_RELAY_CACHE_TTL", 14*24*time.Hour); err != nil {
-		return nil, fmt.Errorf("FS_RELAY_CACHE_TTL: %w", err)
 	}
 	return c, nil
 }
@@ -103,7 +85,9 @@ type Server struct {
 	subs    map[string]map[*sub]struct{} // space -> SSE subscribers
 	nasSeen time.Time
 	busy    map[string]bool
-	limits  map[string][]time.Time // ip -> recent unauthenticated/failed requests
+	pins    map[string]int         // blob -> running transfers
+	limits  map[string][]time.Time // ip -> recent unauthenticated/failed requests (memory only)
+	wipeMu  sync.Mutex
 }
 
 type sub struct {
@@ -119,8 +103,11 @@ func New(cfg *Config, log *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := d.compact(); err != nil {
+		log.Warn("could not compact the relay database", "err", err)
+	}
 	return &Server{cfg: cfg, db: d, blobs: filepath.Join(cfg.DataDir, "blobs"), log: log,
-		subs: map[string]map[*sub]struct{}{}, busy: map[string]bool{}, limits: map[string][]time.Time{}}, nil
+		subs: map[string]map[*sub]struct{}{}, busy: map[string]bool{}, pins: map[string]int{}, limits: map[string][]time.Time{}}, nil
 }
 
 func (s *Server) Close() error { return s.db.Close() }
@@ -186,7 +173,6 @@ func (s *Server) gate(next http.Handler) http.Handler {
 		case p == "/healthz" || p == "/r/v1/info" || strings.HasPrefix(p, "/r/v1/pair/"):
 		case strings.HasPrefix(p, "/n/v1/"):
 			if !s.nasToken(r) {
-				s.log.Warn("rejected NAS request with bad token", "ip", s.ip(r))
 				s.reject(w, r, 20)
 				return
 			}
@@ -251,7 +237,12 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, 404, map[string]any{"error": map[string]string{"code": "not_found", "message": "not found"}})
 		return
 	}
-	s.log.Error("relay request failed", "path", r.URL.Path, "err", err)
+	// nothing about the request goes in the log, and a PathError would name the blob
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	s.log.Error("relay request failed", "err", err)
 	writeJSON(w, 500, map[string]any{"error": map[string]string{"code": "internal", "message": "internal error"}})
 }
 
@@ -304,11 +295,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Cache-Control", "no-store")
 		h.Set("Referrer-Policy", "no-referrer")
-		start := time.Now()
 		next.ServeHTTP(w, r)
-		if r.URL.Path != "/healthz" && r.URL.Path != "/r/v1/events" && r.URL.Path != "/n/v1/poll" {
-			s.log.Debug("http", "method", r.Method, "path", r.URL.Path, "ms", time.Since(start).Milliseconds())
-		}
 	})
 }
 
@@ -560,6 +547,7 @@ func (s *Server) writeAt(b blobRow, r *http.Request) (int64, error) {
 		return 0, errf(409, "busy")
 	}
 	defer s.unlock(b.ID)
+	defer s.pin(b.ID)()
 	off, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	if err != nil || off != b.Received {
 		return b.Received, errf(409, "offset mismatch: have %d", b.Received)
@@ -574,8 +562,10 @@ func (s *Server) writeAt(b blobRow, r *http.Request) (int64, error) {
 	}
 	n, copyErr := io.Copy(f, io.LimitReader(r.Body, b.Size-off))
 	got := off + n
-	if _, err := s.db.Exec(`UPDATE blobs SET received = ?, updated = ? WHERE id = ?`, got, now(), b.ID); err != nil {
-		return got, err
+	if n > 0 { // an empty write must not restart the retention clock
+		if _, err := s.db.Exec(`UPDATE blobs SET received = ?, updated = ? WHERE id = ?`, got, now(), b.ID); err != nil {
+			return got, err
+		}
 	}
 	if copyErr != nil {
 		return got, nil // client resumes from got
@@ -622,7 +612,7 @@ func (s *Server) removeBlob(id string) {
 	announced := s.db.QueryRow(`SELECT space FROM pending WHERE blob_id = ?`, id).Scan(&space) == nil
 	s.db.Exec(`DELETE FROM pending WHERE blob_id = ?`, id)
 	s.db.Exec(`DELETE FROM blobs WHERE id = ?`, id)
-	os.Remove(s.blobPath(id))
+	go s.wipe(id)
 	if announced {
 		s.publish(space, "", map[string]any{"type": "pending"})
 	}
@@ -701,6 +691,7 @@ func (s *Server) getPending(w http.ResponseWriter, r *http.Request, d devCtx) er
 		WHERE p.blob_id = ? AND p.space = ? AND b.kind = 'up'`, id, d.space).Scan(&size, &received, &updated); err != nil || received != size {
 		return errNotFound
 	}
+	defer s.pin(id)()
 	f, err := os.Open(s.blobPath(id))
 	if err != nil {
 		return errNotFound
@@ -744,6 +735,7 @@ func (s *Server) getCache(w http.ResponseWriter, r *http.Request, d devCtx) erro
 	if err != nil || b.Received != b.Size {
 		return errNotFound
 	}
+	defer s.pin(b.ID)()
 	f, err := os.Open(s.blobPath(b.ID))
 	if err != nil {
 		return errNotFound
@@ -1151,6 +1143,7 @@ func (s *Server) nasGetBlob(w http.ResponseWriter, r *http.Request) error {
 	if b.Received != b.Size {
 		return errf(409, "upload incomplete")
 	}
+	defer s.pin(id)()
 	f, err := os.Open(s.blobPath(id))
 	if err != nil {
 		return errNotFound
@@ -1186,42 +1179,4 @@ func (s *Server) pairRespond(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.WriteHeader(204)
 	return nil
-}
-
-// RunJanitor expires abandoned uploads, stale cache copies, old replies and pairings.
-func (s *Server) RunJanitor(ctx context.Context) {
-	t := time.NewTicker(10 * time.Minute)
-	defer t.Stop()
-	for {
-		n := time.Now()
-		var ids []string
-		rows, err := s.db.Query(`SELECT id FROM blobs WHERE (kind = 'up' AND updated < ?) OR (kind = 'cache' AND updated < ?)`,
-			n.Add(-s.cfg.UploadTTL).UnixMilli(), n.Add(-s.cfg.CacheTTL).UnixMilli())
-		if err == nil {
-			for rows.Next() {
-				var id string
-				rows.Scan(&id)
-				ids = append(ids, id)
-			}
-			rows.Close()
-		}
-		for _, id := range ids {
-			s.removeBlob(id)
-		}
-		s.db.Exec(`DELETE FROM replies WHERE created < ?`, n.Add(-7*24*time.Hour).UnixMilli())
-		s.db.Exec(`DELETE FROM ops WHERE created < ?`, n.Add(-14*24*time.Hour).UnixMilli())
-		s.db.Exec(`DELETE FROM pairs WHERE created < ?`, n.Add(-time.Hour).UnixMilli())
-		s.mu.Lock()
-		for ip, ev := range s.limits {
-			if len(ev) == 0 || n.Sub(ev[len(ev)-1]) > time.Hour {
-				delete(s.limits, ip)
-			}
-		}
-		s.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-	}
 }

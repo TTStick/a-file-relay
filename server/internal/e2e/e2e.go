@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -110,6 +111,11 @@ func PairRespAAD(lookup string) string      { return "fsps1|" + lookup }
 
 // PendingAAD binds a pending-upload description to its space and blob, so the
 // relay can't move it to another space or attach it to a different upload.
+// Retention is how long the relay keeps anything in transit, counted from the
+// moment it finished arriving. The NAS sizes its cache pushes to match: a copy
+// that outlives this has expired on the relay and would just be sent again.
+const Retention = 12 * time.Hour
+
 func PendingAAD(space, blobID string) string { return "fspend1|" + space + "|" + blobID }
 
 // Pairing derives the relay lookup id and the envelope key from the one-time

@@ -259,12 +259,12 @@ NAS 日志出现「中转模式已启用：NAS 只主动连接中转站，不接
 | `FS_RELAY_URL` / `FS_RELAY_TOKEN` | | 中转站地址与 NAS 令牌（与中转站的 `FS_RELAY_NAS_TOKEN` 相同） |
 | `FS_RELAY_FINGERPRINT` | | 中转站使用自签证书时的 SHA-256 指纹 |
 | `FS_RELAY_INTERVAL` | `20s` | NAS 空闲时多久主动取一次件（有活动后 2 分钟内每 2 秒一次） |
-| `FS_RELAY_CACHE_DAYS` / `_MAX_FILE` / `_MAX_TOTAL` | `7` / `256M` / `4G` | 预先把最近的文件加密放到中转站，外出时可以直接下载 |
+| `FS_RELAY_CACHE_MAX_FILE` / `_MAX_TOTAL` | `256M` / `4G` | 最近 12 小时的新文件会预先加密放到中转站，外出时可以直接下载；这两项限制单文件和总量 |
 | `FS_REMOTE_MAX_FILE` | `8G` | 经中转站上传/获取的单文件上限 |
 | `FS_REMOTE_PURGE` | `false` | 外出的设备能否彻底删除（默认只能删到回收站） |
 | `FS_REMOTE_PAIRING` | `false` | 外出的设备能否生成配对码添加新设备 |
 
-中转站（`fileswitch relay`）另有：`FS_RELAY_NAS_TOKEN`（必填）、`FS_RELAY_QUOTA`（每个交换空间可暂存，NAS 上每个用户一个空间，默认 50G；磁盘按「空间数 × 配额」预留）、`FS_RELAY_MAX_FILE`（默认 16G）、`FS_RELAY_UPLOAD_TTL`（未被收取的上传保留时间，默认 168h）、`FS_RELAY_CACHE_TTL`（缓存保留时间，默认 336h）。
+中转站（`fileswitch relay`）另有：`FS_RELAY_NAS_TOKEN`（必填）、`FS_RELAY_QUOTA`（每个交换空间可暂存，NAS 上每个用户一个空间，默认 50G；磁盘按「空间数 × 配额」预留）、`FS_RELAY_MAX_FILE`（默认 16G）。经过中转站的文件最多保留 12 小时，这一点不可配置，详见 [relay-protocol.md](docs/relay-protocol.md#留存与日志)。
 
 ### 运维命令
 

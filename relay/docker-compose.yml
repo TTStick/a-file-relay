@@ -6,7 +6,7 @@
 #   3. docker compose up -d --build
 #
 # 中转站只存放加密后的数据，读不到任何文件内容和文件名；即使这台服务器被攻破，
-# 也无法伪造操作、无法连入 NAS。
+# 也无法伪造操作、无法连入 NAS。文件最多保留 12 小时，不写访问日志。
 services:
   relay:
     build:
@@ -30,9 +30,11 @@ services:
       FS_RELAY_NAS_TOKEN: ${FS_RELAY_NAS_TOKEN:?请在 .env 中设置}
       FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}       # 每个交换空间（NAS 上每个用户一个）最多暂存
       FS_RELAY_MAX_FILE: ${FS_RELAY_MAX_FILE:-16G}
-      FS_RELAY_CACHE_TTL: ${FS_RELAY_CACHE_TTL:-336h}
     expose:
       - "8443"
+    # 不留痕：容器的输出不落盘（要看证书指纹用 docker compose exec relay fileswitch fingerprint）
+    logging:
+      driver: none
 
   caddy:
     image: caddy:2-alpine
@@ -46,3 +48,5 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy-data:/data
     depends_on: [relay]
+    logging:
+      driver: none

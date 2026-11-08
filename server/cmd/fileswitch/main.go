@@ -179,7 +179,8 @@ func listen(ctx context.Context, log *slog.Logger, cfg *config.Config, h http.Ha
 		// requests end with the process: event streams would otherwise keep
 		// Shutdown waiting until its deadline
 		BaseContext: func(net.Listener) context.Context { return ctx },
-		ErrorLog:    slog.NewLogLogger(log.Handler(), slog.LevelDebug),
+		// net/http's own messages quote client addresses
+		ErrorLog: slog.NewLogLogger(slog.DiscardHandler, slog.LevelError),
 	}
 	if tlsOn {
 		cert, err := tlsutil.Load(filepath.Join(cfg.DataDir, "tls"), cfg.TLSCert, cfg.TLSKey, cfg.TLSHosts)

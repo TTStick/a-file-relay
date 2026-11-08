@@ -1,6 +1,6 @@
 # 没有域名时：中转站使用自签证书（客户端与 NAS 按指纹固定证书）
 #   docker compose -f docker-compose.selfsigned.yml up -d --build
-#   docker compose -f docker-compose.selfsigned.yml logs relay   # 记下 TLS 指纹，填到 NAS 的 FS_RELAY_FINGERPRINT
+#   docker compose -f docker-compose.selfsigned.yml exec relay fileswitch fingerprint   # 记下 TLS 指纹，填到 NAS 的 FS_RELAY_FINGERPRINT
 services:
   relay:
     build:
@@ -24,3 +24,5 @@ services:
       FS_RELAY_NAS_TOKEN: ${FS_RELAY_NAS_TOKEN:?请在 .env 中设置}
       FS_TLS_HOSTS: ${FS_PUBLIC_IP:-}
       FS_RELAY_QUOTA: ${FS_RELAY_QUOTA:-50G}   # 每个交换空间（NAS 上每个用户一个）最多暂存
+    logging:
+      driver: none   # 不留痕：容器的输出不落盘

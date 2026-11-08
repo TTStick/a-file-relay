@@ -171,7 +171,6 @@ func (s *Server) handleUploadChunk(w http.ResponseWriter, r *http.Request, a *Au
 		return err
 	}
 	if fillErr != nil {
-		s.log.Info("upload chunk interrupted", "upload", id, "received", bw.Received(), "err", fillErr)
 		if errors.Is(fillErr, os.ErrDeadlineExceeded) {
 			writeJSON(w, http.StatusRequestTimeout, map[string]any{
 				"error":    map[string]string{"code": "timeout", "message": "数据停止传输超过时限，请从 received 处继续"},
@@ -253,7 +252,7 @@ func (s *Server) finish(a *Auth, blobID string, enc bool, sum string, p uploadPa
 	if replaced != nil {
 		s.hub.Publish(a.User.ID, Event{Type: "node.trashed", Node: replaced, ParentID: replaced.ParentID, DeviceID: a.Device.ID})
 	}
-	s.audit(a, "file_uploaded", s.where(a, n))
+	s.audit(a, "file_uploaded")
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	if p.CategoryID != "" {
 		s.hub.Publish(a.User.ID, Event{Type: "category.changed", DeviceID: a.Device.ID})

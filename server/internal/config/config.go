@@ -41,7 +41,6 @@ type Config struct {
 	RelayToken       string        // FS_RELAY_TOKEN (same as the relay's FS_RELAY_NAS_TOKEN)
 	RelayFingerprint string        // FS_RELAY_FINGERPRINT (pin a self-signed relay certificate)
 	RelayInterval    time.Duration // FS_RELAY_INTERVAL: idle poll interval
-	CacheDays        int           // FS_RELAY_CACHE_DAYS: push files newer than this to the relay cache
 	CacheMaxFile     int64         // FS_RELAY_CACHE_MAX_FILE
 	CacheMaxTotal    int64         // FS_RELAY_CACHE_MAX_TOTAL
 	RemoteMaxFile    int64         // FS_REMOTE_MAX_FILE: largest file a remote device may upload or fetch
@@ -126,9 +125,6 @@ func Load() (*Config, error) {
 	}
 	if c.RelayInterval, err = time.ParseDuration(env("FS_RELAY_INTERVAL", "20s")); err != nil || c.RelayInterval < time.Second {
 		return nil, errors.New("FS_RELAY_INTERVAL must be a duration like 20s or 5m")
-	}
-	if c.CacheDays, err = strconv.Atoi(env("FS_RELAY_CACHE_DAYS", "7")); err != nil {
-		return nil, fmt.Errorf("FS_RELAY_CACHE_DAYS: %w", err)
 	}
 	for _, x := range []struct {
 		key, def string

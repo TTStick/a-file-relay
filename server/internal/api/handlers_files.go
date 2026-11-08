@@ -83,7 +83,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request, a *A
 		if err != nil {
 			return err
 		}
-		s.audit(a, "folder_created", s.where(a, n))
+		s.audit(a, "folder_created")
 		writeJSON(w, http.StatusCreated, n)
 		return nil
 	}
@@ -96,7 +96,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request, a *A
 	if err != nil {
 		return err
 	}
-	s.audit(a, "folder_created", s.where(a, n))
+	s.audit(a, "folder_created")
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	writeJSON(w, http.StatusCreated, n)
 	return nil
@@ -123,20 +123,19 @@ func (s *Server) patchNode(a *Auth, id string, p nodePatch) (store.Node, error) 
 		if n, err = s.db.Move(a.User.ID, id, *p.ParentID, true); err != nil {
 			return n, err
 		}
-		s.audit(a, "moved", s.where(a, n))
+		s.audit(a, "moved")
 	}
 	if p.Name != nil && *p.Name != n.Name {
-		old := n.Name
 		if n, err = s.db.Rename(a.User.ID, id, strings.TrimSpace(*p.Name)); err != nil {
 			return n, err
 		}
-		s.audit(a, "renamed", old+" → "+n.Name)
+		s.audit(a, "renamed")
 	}
 	if p.CategoryID != nil && *p.CategoryID != n.CategoryID {
 		if n, err = s.db.SetCategory(a.User.ID, id, *p.CategoryID); err != nil {
 			return n, err
 		}
-		s.audit(a, "category_set", n.Name)
+		s.audit(a, "category_set")
 	}
 	if p.Timeline != nil && *p.Timeline != n.Timeline {
 		if err = s.db.SetTimeline(a.User.ID, id, *p.Timeline); err != nil {
@@ -169,7 +168,7 @@ func (s *Server) trashNode(a *Auth, id string) error {
 	if err != nil {
 		return err
 	}
-	s.audit(a, "trashed", s.where(a, n))
+	s.audit(a, "trashed")
 	s.hub.Publish(a.User.ID, Event{Type: "node.trashed", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	return nil
 }
@@ -285,7 +284,7 @@ func (s *Server) handleZip(w http.ResponseWriter, r *http.Request, a *Auth) erro
 		}
 		f, err := s.blobs.Open(e.Blob, e.Size, e.Enc)
 		if err != nil {
-			s.log.Error("zip: open blob", "node", e.ID, "err", err)
+			s.log.Error("zip: open blob", "err", bareErr(err))
 			return nil
 		}
 		_, err = io.Copy(fw, f)
@@ -402,7 +401,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, a *Auth) 
 	if err != nil {
 		return err
 	}
-	s.audit(a, "restored", s.where(a, n))
+	s.audit(a, "restored")
 	s.hub.Publish(a.User.ID, Event{Type: "node.created", Node: &n, ParentID: n.ParentID, DeviceID: a.Device.ID})
 	writeJSON(w, http.StatusOK, n)
 	return nil
@@ -414,7 +413,7 @@ func (s *Server) handlePurge(w http.ResponseWriter, r *http.Request, a *Auth) er
 		return err
 	}
 	s.removeBlobs(blobs)
-	s.db.Audit(a.User.ID, a.Device.ID, "trash_purged", r.PathValue("id"), s.clientIP(r))
+	s.db.Audit(a.User.ID, a.Device.ID, "trash_purged", "", s.clientIP(r))
 	s.hub.Publish(a.User.ID, Event{Type: "trash.changed", DeviceID: a.Device.ID})
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -426,7 +425,7 @@ func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request, a *Aut
 		return err
 	}
 	s.removeBlobs(blobs)
-	s.db.Audit(a.User.ID, a.Device.ID, "trash_emptied", strconv.Itoa(len(blobs)), s.clientIP(r))
+	s.db.Audit(a.User.ID, a.Device.ID, "trash_emptied", "", s.clientIP(r))
 	s.hub.Publish(a.User.ID, Event{Type: "trash.changed", DeviceID: a.Device.ID})
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -454,7 +453,7 @@ func (s *Server) handleCreateCategory(w http.ResponseWriter, r *http.Request, a 
 	}
 	c, err := s.db.CreateCategory(a.User.ID, req.Name, req.Color, req.Icon)
 	if err == nil {
-		s.audit(a, "category_created", c.Name)
+		s.audit(a, "category_created")
 	}
 	if errors.Is(err, store.ErrConflict) {
 		return errf(http.StatusConflict, "name_conflict", "已有同名分类")
@@ -474,7 +473,7 @@ func (s *Server) handleUpdateCategory(w http.ResponseWriter, r *http.Request, a 
 	}
 	c, err := s.db.UpdateCategory(a.User.ID, r.PathValue("id"), p)
 	if err == nil {
-		s.audit(a, "category_updated", c.Name)
+		s.audit(a, "category_updated")
 	}
 	if errors.Is(err, store.ErrConflict) {
 		return errf(http.StatusConflict, "name_conflict", "已有同名分类")
@@ -495,7 +494,7 @@ func (s *Server) handleDeleteCategory(w http.ResponseWriter, r *http.Request, a 
 	if err := s.db.DeleteCategory(a.User.ID, c.ID); err != nil {
 		return err
 	}
-	s.audit(a, "category_deleted", c.Name)
+	s.audit(a, "category_deleted")
 	s.hub.Publish(a.User.ID, Event{Type: "category.changed", DeviceID: a.Device.ID})
 	w.WriteHeader(http.StatusNoContent)
 	return nil

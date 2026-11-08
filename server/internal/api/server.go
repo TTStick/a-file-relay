@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
-	"path"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -24,7 +24,7 @@ import (
 	"fileswitch/internal/store"
 )
 
-const Version = "1.1.3"
+const Version = "1.1.4"
 
 type Server struct {
 	cfg     *config.Config
@@ -236,7 +236,7 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, store.ErrInvalid):
 		ae = &apiError{http.StatusBadRequest, "invalid", err.Error()}
 	default:
-		s.log.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		s.log.Error("request failed", "route", r.Pattern, "err", bareErr(err))
 		ae = &apiError{http.StatusInternalServerError, "internal", "服务器内部错误"}
 	}
 	writeJSON(w, ae.status, map[string]any{"error": map[string]string{"code": ae.code, "message": ae.msg}})
@@ -328,16 +328,23 @@ func (s *Server) authed(h handler) http.Handler {
 	})
 }
 
-// audit records something a device did, for the security log.
-func (s *Server) audit(a *Auth, action, detail string) {
-	s.db.Audit(a.User.ID, a.Device.ID, action, detail, a.IP)
+// audit records that a device did something, for the security log. It says
+// what kind of thing and when, never which file: names and paths stay out of
+// the log.
+func (s *Server) audit(a *Auth, action string) {
+	s.db.Audit(a.User.ID, a.Device.ID, action, "", a.IP)
 }
 
-// where is a node's full path for the log, e.g. "/工作/报告.pdf".
-func (s *Server) where(a *Auth, n store.Node) string {
-	ns := []store.Node{n}
-	s.db.FillLocations(a.User.ID, ns)
-	return path.Join("/", ns[0].Location, n.Name)
+// bareErr keeps what went wrong and drops which file it happened to.
+func bareErr(err error) error {
+	var pe *fs.PathError
+	switch {
+	case errors.As(err, &pe):
+		return pe.Err
+	case errors.Is(err, store.ErrInvalid): // the message can quote a file name
+		return store.ErrInvalid
+	}
+	return err
 }
 
 // idleBody fails a request body that stops arriving, instead of holding the
@@ -386,7 +393,6 @@ func (s *Server) admin(h handler) handler {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
-	bytes  int64
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -399,7 +405,6 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 		w.status = http.StatusOK
 	}
 	n, err := w.ResponseWriter.Write(b)
-	w.bytes += int64(n)
 	return n, err
 }
 
@@ -407,7 +412,6 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		if r.Body != nil && r.Body != http.NoBody {
 			r.Body = &idleBody{ReadCloser: r.Body, rc: http.NewResponseController(w), idle: s.bodyIdle}
 		}
@@ -429,10 +433,6 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				if sw.status == 0 {
 					s.writeErr(sw, r, errors.New("panic"))
 				}
-			}
-			if r.URL.Path != "/healthz" && r.URL.Path != "/api/v1/events" {
-				s.log.Info("http", "method", r.Method, "path", r.URL.Path, "status", sw.status,
-					"bytes", sw.bytes, "ms", time.Since(start).Milliseconds(), "ip", s.clientIP(r))
 			}
 		}()
 		next.ServeHTTP(sw, r)
@@ -458,7 +458,7 @@ func (s *Server) unlockUpload(id string) {
 func (s *Server) removeBlobs(ids []string) {
 	for _, id := range ids {
 		if err := s.blobs.Remove(id); err != nil {
-			s.log.Warn("remove blob", "blob", id, "err", err)
+			s.log.Warn("remove blob", "err", bareErr(err))
 		}
 	}
 }
@@ -546,4 +546,5 @@ func (s *Server) janitor() {
 		s.blobs.SweepTmp(keep, 24*time.Hour)
 	}
 	s.db.PruneAudit(now.AddDate(0, -6, 0).UnixMilli())
+	s.db.TruncateWAL()
 }

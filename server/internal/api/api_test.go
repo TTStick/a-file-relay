@@ -60,6 +60,10 @@ func (c *client) do(method, path string, body any, want int) map[string]any {
 }
 
 func setup(t *testing.T) (*client, *Server) {
+	return setupLogged(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func setupLogged(t *testing.T, log *slog.Logger) (*client, *Server) {
 	dir := t.TempDir()
 	cfg := &config.Config{DataDir: dir, TrashDays: 30, ServerName: "test"}
 	db, err := store.Open(dir + "/test.db")
@@ -77,7 +81,7 @@ func setup(t *testing.T) (*client, *Server) {
 	if _, err := db.CreateUser("alice", h, true); err != nil {
 		t.Fatal(err)
 	}
-	s := New(cfg, db, blobs, slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	s := New(cfg, db, blobs, log, false)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return &client{t: t, base: ts.URL}, s

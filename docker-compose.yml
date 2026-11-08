@@ -42,7 +42,7 @@ services:
       # FS_RELAY_TOKEN: <与中转站 FS_RELAY_NAS_TOKEN 相同>
       # FS_RELAY_FINGERPRINT: <中转站使用自签证书时填写其指纹；用正规证书时留空>
       # FS_RELAY_INTERVAL: 20s        # 空闲时多久向中转站取一次件；有活动后 2 分钟内每 2 秒一次
-      # FS_RELAY_CACHE_DAYS: "7"      # 把最近几天的文件预先加密放到中转站，外出时秒下
+      # 最近 12 小时的新文件会预先加密放到中转站，外出时秒下；下面两项限制大小
       # FS_RELAY_CACHE_MAX_FILE: 256M
       # FS_RELAY_CACHE_MAX_TOTAL: 4G
       # FS_REMOTE_MAX_FILE: 8G        # 远程设备单文件上限
