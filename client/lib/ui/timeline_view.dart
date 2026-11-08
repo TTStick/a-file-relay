@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
 import '../core/transfers.dart';
+import '../platform/shell.dart';
 import 'dialogs.dart';
 import 'files_view.dart';
 import 'format.dart';
@@ -134,6 +135,113 @@ class _TimeListState extends State<TimeList> {
   }
 }
 
+/// Uploads still on the relay (the NAS hasn't collected them yet). They can be
+/// opened or downloaded from there in the meantime.
+class PendingSection extends StatefulWidget {
+  const PendingSection({super.key});
+
+  @override
+  State<PendingSection> createState() => _PendingSectionState();
+}
+
+class _PendingSectionState extends State<PendingSection> {
+  List<PendingFile> items = [];
+  StreamSubscription<ServerEvent>? _sub;
+  Timer? _reload;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = AppState.instance.events.listen((ev) {
+      if (ev.type == 'pending' || ev.type == 'hello' || ev.type.startsWith('node.')) {
+        _reload?.cancel();
+        _reload = Timer(const Duration(milliseconds: 300), _load);
+      }
+    });
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _reload?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final src = AppState.instance.pendingSource;
+    if (src == null) return;
+    try {
+      final list = await src.pendingFiles();
+      if (mounted) setState(() => items = list);
+    } catch (_) {}
+  }
+
+  Future<void> _open(PendingFile f) async {
+    toast(context, '正在打开 ${f.name}…');
+    try {
+      final path = await TransferManager.instance.fetchPendingToCache(f);
+      await Shell.instance.openLocal(path);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+        child: Text('还没到 NAS · 可直接从中转站下载',
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+      ),
+      for (final f in items)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            leading: Builder(builder: (_) {
+              final (icon, color) = iconForName(f.name);
+              return Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, color: color),
+              );
+            }),
+            title: Row(children: [
+              Flexible(child: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
+                child: const Text('中转站', style: TextStyle(fontSize: 11, color: Colors.orange)),
+              ),
+            ]),
+            subtitle: Text(
+              [formatTime(f.uploaded), formatBytes(f.size), if (f.from.isNotEmpty) '来自 ${f.from}', '发往 ${f.path}'].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: muted,
+            ),
+            onTap: () => _open(f),
+            trailing: IconButton(
+              tooltip: '下载',
+              icon: const Icon(Icons.download_rounded),
+              onPressed: () {
+                TransferManager.instance.downloadPending(f);
+                toast(context, '开始从中转站下载 ${f.name}');
+              },
+            ),
+          ),
+        ),
+    ]);
+  }
+}
+
 class TimeRow extends StatelessWidget {
   const TimeRow({super.key, required this.node});
   final Node node;
@@ -232,6 +340,7 @@ class _TimelineViewState extends State<TimelineView> {
         );
         final list = TimeList(
           reloadKey: filter,
+          header: filter.isEmpty ? const PendingSection() : null,
           loader: (before) => s.api!.timeline(before: before, category: filter),
           empty: const _Empty(icon: Icons.history_rounded, text: '还没有投递记录', hint: '上传或拖拽到托盘的文件会按时间出现在这里'),
         );

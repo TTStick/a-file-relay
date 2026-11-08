@@ -37,6 +37,11 @@ final class AppModel {
     }
 
     var signedIn: Bool { backend != nil }
+
+    /// Where uploads still waiting on the relay are listed and fetched: the relay
+    /// backend itself, or on the LAN a relay connection kept just for that.
+    var pendingSource: RelayBackend? { (backend as? RelayBackend) ?? lanRelay }
+    private var lanRelay: RelayBackend?
     var viaRelay: Bool { backend?.isRemote ?? false }
 
     private var generation = 0
@@ -168,7 +173,12 @@ final class AppModel {
         guard gen == generation, backend != nil else { return }
         runEvents(gen)
         watchMode(gen)
-        if let d = b as? DirectBackend { Task { await ensureRelayEnrollment(p, d) } }
+        lanRelay?.close()
+        lanRelay = nil
+        if let d = b as? DirectBackend {
+            if let c = Keychain.relay(p.id) { lanRelay = relayBackend(p, c) }
+            Task { await ensureRelayEnrollment(p, d) }
+        }
     }
 
     /// On the LAN: if the NAS has a relay, get credentials to keep working away from home.
@@ -177,6 +187,7 @@ final class AppModel {
         guard let bundle = try? await d.enrollRelay() else { return }
         let c = RelayCreds(json: bundle)
         Keychain.setRelay(p.id, c)
+        if lanRelay == nil, backend is DirectBackend { lanRelay = relayBackend(p, c) }
         var p = p
         p.relayURL = c.url
         upsert(p)
@@ -319,6 +330,8 @@ final class AppModel {
         modeTask?.cancel()
         backend?.close()
         backend = nil
+        lanRelay?.close()
+        lanRelay = nil
         user = nil
         device = nil
         info = nil

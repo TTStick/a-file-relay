@@ -52,6 +52,21 @@ final class ActionCenter {
     }
     #endif
 
+    func open(_ p: PendingFile) {
+        opening = p.name
+        Task {
+            defer { opening = nil }
+            do { previewURL = try await Transfers.shared.fetchToCache(p) } catch {
+                model.toast((error as? LocalizedError)?.errorDescription ?? "无法打开")
+            }
+        }
+    }
+
+    func download(_ p: PendingFile) {
+        Transfers.shared.download(p)
+        model.toast("开始从中转站下载 \(p.name)")
+    }
+
     func download(_ nodes: [Node], choose: Bool = false) {
         var dir: URL?
         #if os(macOS)

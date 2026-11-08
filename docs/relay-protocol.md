@@ -40,6 +40,7 @@ NAS 上的 SK、DK 都用静态加密主密钥封装后存放在数据库中（�
 | 回执（NAS → 设备） | DK | `fsrp1|<设备id>|<操作id>` |
 | 密钥环 | DK | `fskr1|<设备id>` |
 | 配对请求 / 应答 | HKDF(配对密钥) | `fspq1|<lookup>` / `fsps1|<lookup>` |
+| 待收取上传的描述 | SK[kid] | `fspend1|<空间id>|<blob id>` |
 | 快照 | SK[kid] | `FSS1 ‖ kid ‖ version ‖ 空间id` |
 | 文件头（封装 FK） | SK[kid] | `FSE1 ‖ kid` |
 | 文件分段 i | FK | 是否为最后一段（1 字节）；nonce = 0¹⁶ ‖ BE64(i) |
@@ -78,10 +79,30 @@ NAS 上的 SK、DK 都用静态加密主密钥封装后存放在数据库中（�
 
 ## 中转站接口
 
-客户端（`Authorization: Bearer <中转令牌>`）：`GET /r/v1/status`、`GET /r/v1/snapshot`、`GET /r/v1/keyring`、`POST /r/v1/ops`、`GET /r/v1/replies`、`POST|GET|PUT /r/v1/blobs/{id}`、`POST /r/v1/cache/lookup`、`GET /r/v1/cache/{key}`（支持 Range）、`GET /r/v1/events`（SSE）。
+客户端（`Authorization: Bearer <中转令牌>`）：`GET /r/v1/status`、`GET /r/v1/snapshot`、`GET /r/v1/keyring`、`POST /r/v1/ops`、`GET /r/v1/replies`、`POST|GET|PUT /r/v1/blobs/{id}`、`POST /r/v1/cache/lookup`、`GET /r/v1/cache/{key}`（支持 Range）、`PUT /r/v1/blobs/{id}/announce`、`GET /r/v1/pending`、`GET /r/v1/pending/{id}`（支持 Range）、`GET /r/v1/events`（SSE）。
 
 配对（无令牌，按 IP 限流）：`POST|GET /r/v1/pair/{lookup}`。
 
 NAS（`Authorization: Bearer <FS_RELAY_TOKEN>`）：`GET /n/v1/poll`、`POST /n/v1/ack`、`PUT /n/v1/spaces/{s}/devices|snapshot|keyrings/{d}`、`POST /n/v1/spaces/{s}/replies`、`GET|PUT|DELETE /n/v1/spaces/{s}/cache[/{key}]`、`GET|DELETE /n/v1/blobs/{id}`、`PUT /n/v1/pair/{lookup}`、`DELETE /n/v1/spaces/{s}`。
 
 中转站对上传和缓存有每空间配额（`FS_RELAY_QUOTA`）与过期时间；NAS 收取上传后立即删除中转站上的副本。
+
+## 待收取的上传
+
+NAS 和中转站之间的线路可能很慢。为了让同一用户的其他设备不用等 NAS 收完：
+
+1. 上传设备把文件密文传完后，用当前空间密钥封装一段描述 `{name, path, size, mtime, nonce, from}`
+   （AAD `fspend1|<空间id>|<blob id>`），`PUT /r/v1/blobs/{id}/announce {kid, n, c}`。
+   只有上传这台设备能为自己的、已传完的 blob 发布描述。
+2. 同一空间的设备 `GET /r/v1/pending` 拿到列表，用密钥环打开描述；`GET /r/v1/pending/{id}` 下载密文
+   （只限本空间、已传完、已发布描述的 blob）。
+3. 下载方核对文件头里的 nonce 与描述里的 `nonce` 一致，再逐段解密校验。中转站伪造不了描述（没有空间密钥），
+   也没法把描述挪到别的 blob 或别的空间上（AAD 绑定了两者）。
+4. NAS 收取后删除 blob，描述随之删除，中转站推送 `{"type":"pending"}` 事件，客户端刷新列表。
+
+中转站因此多知道的只有"这个空间的哪台设备上传了多大的文件、谁下载了"，和原来的上传本身相比没有新增内容。
+
+## NAS 的 HTTP 客户端
+
+NAS 访问中转站时不跟随任何重定向。否则被攻破的中转站可以返回 `302 Location: http://192.168.x.x/...`，
+让 NAS 把请求打到家里局域网的其他设备上（明文 http 也绕过了证书固定）。客户端同样不跟随重定向。

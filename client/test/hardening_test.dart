@@ -51,6 +51,7 @@ void main() {
   group('certificate pinning', () {
     HttpServer? server;
     late String fp;
+    late SecurityContext serverCtx;
 
     setUpAll(() async {
       final dir = Directory.systemTemp.createTempSync('fs-pin');
@@ -62,6 +63,7 @@ void main() {
       final ctx = SecurityContext()
         ..useCertificateChain('${dir.path}/c.pem')
         ..usePrivateKey('${dir.path}/k.pem');
+      serverCtx = ctx;
       server = await HttpServer.bindSecure(InternetAddress.loopbackIPv4, 0, ctx);
       server!.listen((req) => req.response
         ..write('ok')
@@ -85,6 +87,24 @@ void main() {
     test('the pinned certificate is accepted', () async {
       expect(await get(fp), 'ok');
       expect(await get(fp.replaceAll(':', '').toLowerCase()), 'ok');
+    });
+
+    test('redirects are not followed (they could point into the local network)', () async {
+      var hits = 0;
+      final canary = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      canary.listen((req) {
+        hits++;
+        req.response.close();
+      });
+      final evil = await HttpServer.bindSecure(InternetAddress.loopbackIPv4, 0, serverCtx);
+      evil.listen((req) => req.response.redirect(Uri.parse('http://127.0.0.1:${canary.port}/cgi-bin/reboot')));
+      addTearDown(() {
+        canary.close(force: true);
+        evil.close(force: true);
+      });
+      final api = ApiClient(base: Uri.parse('https://127.0.0.1:${evil.port}'), fingerprint: fp, token: 't');
+      await expectLater(api.me(), throwsA(isA<ApiException>()));
+      expect(hits, 0);
     });
 
     test('any other certificate is refused', () async {

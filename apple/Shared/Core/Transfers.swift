@@ -165,10 +165,12 @@ final class Transfers {
         t.total = sz
         t.files = 1
         let prog = Throttle { [t] v in t.done = v; t.sample() }
+        let label = [t.destination, url.lastPathComponent].filter { !$0.isEmpty }.joined(separator: "/")
+        let from = AppModel.shared.device?.name ?? ""
         try await gate.run {
             await MainActor.run { t.status = .running }
             if let r = b as? RelayBackend {
-                let (blob, nonce) = try await r.uploadBlob(file: url, size: sz, progress: { prog($0) })
+                let (blob, nonce) = try await r.uploadBlob(file: url, size: sz, path: label, from: from, progress: { prog($0) })
                 await MainActor.run { t.phase = "等待 NAS 接收…" }
                 var op: [String: Any] = ["files": [await self.entry(url.lastPathComponent, blob, nonce, sz, url)]]
                 if let parentID { op["parent_id"] = parentID }
@@ -250,6 +252,8 @@ final class Transfers {
         // relay never holds more than one batch.
         var folderID: String?
         var start = 0
+        let base = [t.destination, dir.lastPathComponent].filter { !$0.isEmpty }.joined(separator: "/")
+        let from = AppModel.shared.device?.name ?? ""
         repeat {
             var end = start, bytes: Int64 = 0
             while end < files.count && end - start < 500 && (bytes < 2 << 30 || end == start) { bytes += size(files[end].0); end += 1 }
@@ -259,7 +263,9 @@ final class Transfers {
                     let (u, rel) = files[i], sz = size(u), prog = track(i)
                     g.addTask {
                         do {
-                            let (blob, nonce) = try await self.gate.run { try await r.uploadBlob(file: u, size: sz, progress: { prog($0) }) }
+                            let (blob, nonce) = try await self.gate.run {
+                                try await r.uploadBlob(file: u, size: sz, path: base + "/" + rel, from: from, progress: { prog($0) })
+                            }
                             return await self.entry(rel, blob, nonce, sz, u)
                         } catch is CancellationError { throw CancellationError() } catch {
                             await MainActor.run { t.failedFiles += 1; t.error = "\(rel): \(error.localizedDescription)" }
@@ -385,6 +391,40 @@ final class Transfers {
     }
 
     /// Downloads into the cache for preview/open, reusing an earlier copy.
+    /// Downloads a file that is still waiting on the relay for the NAS.
+    func download(_ p: PendingFile, to dir: URL? = nil) -> Transfer {
+        let t = add(Transfer(kind: .download, name: p.name, isFolder: false, destination: ""))
+        t.task = Task {
+            do {
+                guard let r = AppModel.shared.pendingSource else { throw FSError(status: 0, code: "relay", message: "此设备没有开通中转访问") }
+                let root = dir ?? Self.downloadsDir
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                t.status = .running
+                t.total = p.size
+                t.files = 1
+                let target = Self.unique(root.appendingPathComponent(Self.safeName(p.name)))
+                t.localURL = target
+                let prog = Throttle { [t] v in t.done = v; t.sample() }
+                try await gate.run { try await r.downloadPending(p, to: target, progress: { prog($0) }) }
+                t.doneFiles = 1
+                finish(t)
+            } catch { finish(t, error) }
+        }
+        return t
+    }
+
+    func fetchToCache(_ p: PendingFile) async throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fileswitch-open/pending-\(p.id)", isDirectory: true)
+        let target = dir.appendingPathComponent(Self.safeName(p.name))
+        if let s = try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize, Int64(s) == p.size { return target }
+        try? FileManager.default.removeItem(at: dir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let t = download(p, to: dir)
+        await t.task?.value
+        guard t.status == .done, let url = t.localURL else { throw FSError(status: 0, code: "download", message: t.error ?? "已取消") }
+        return url
+    }
+
     func fetchToCache(_ n: Node) async throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fileswitch-open/\(n.id)", isDirectory: true)
         let target = dir.appendingPathComponent(Self.safeName(n.name))

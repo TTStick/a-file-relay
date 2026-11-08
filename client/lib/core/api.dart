@@ -162,7 +162,8 @@ class ApiClient implements Backend {
       return true;
     };
     try {
-      final req = await c.getUrl(url.replace(path: '${url.path}/api/v1/info'));
+      final req = await c.getUrl(url.replace(path: '${url.path}/api/v1/info'))
+        ..followRedirects = false;
       final resp = await req.close().timeout(const Duration(seconds: 10));
       final text = await utf8.decodeStream(resp);
       if (resp.statusCode != 200) {
@@ -210,7 +211,9 @@ class ApiClient implements Backend {
 
   Future<HttpClientRequest> _open(String method, Uri u) async {
     try {
-      final req = await _http.openUrl(method, u);
+      // never follow redirects: they could point into the local network
+      final req = await _http.openUrl(method, u)
+        ..followRedirects = false;
       if (token != null) req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       return req;
     } catch (e) {
@@ -247,7 +250,7 @@ class ApiClient implements Backend {
           data = null;
         }
       }
-      if (resp.statusCode >= 400) throw _errorFrom(resp.statusCode, data);
+      if (resp.statusCode >= 300) throw _errorFrom(resp.statusCode, data);
       return data;
     } catch (e) {
       throw _wrap(e);
@@ -575,7 +578,7 @@ class ApiClient implements Backend {
       final resp = await req.close().timeout(const Duration(minutes: 2));
       final text = await utf8.decodeStream(resp);
       final data = text.isEmpty ? null : jsonDecode(text);
-      if (resp.statusCode >= 400) throw _errorFrom(resp.statusCode, data);
+      if (resp.statusCode >= 300) throw _errorFrom(resp.statusCode, data);
       return Node.fromJson(_map(_map(data)['node']));
     } catch (e) {
       cancel?.check();
@@ -600,7 +603,7 @@ class ApiClient implements Backend {
       final resp = await req.close().timeout(const Duration(minutes: 5));
       final text = await utf8.decodeStream(resp);
       final data = text.isEmpty ? null : jsonDecode(text);
-      if (resp.statusCode >= 400) throw _errorFrom(resp.statusCode, data);
+      if (resp.statusCode >= 300) throw _errorFrom(resp.statusCode, data);
       if (data == null) throw ApiException(0, 'network', '连接中断');
       return (_map(data)['received'] as num).toInt();
     } catch (e) {
@@ -639,7 +642,7 @@ class ApiClient implements Backend {
             await part.delete();
             continue;
           }
-          if (resp.statusCode >= 400) {
+          if (resp.statusCode >= 300) {
             final text = await utf8.decodeStream(resp);
             throw _errorFrom(resp.statusCode, text.isEmpty ? null : jsonDecode(text));
           }
@@ -685,7 +688,7 @@ class ApiClient implements Backend {
     final req = await _open('GET', uri('/nodes/${n.id}/content'));
     try {
       final resp = await req.close().timeout(const Duration(seconds: 30));
-      if (resp.statusCode >= 400) throw _errorFrom(resp.statusCode, null);
+      if (resp.statusCode >= 300) throw _errorFrom(resp.statusCode, null);
       final b = BytesBuilder(copy: false);
       await for (final c in resp.timeout(const Duration(seconds: 60))) {
         b.add(c);

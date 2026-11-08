@@ -13,6 +13,8 @@ import AppKit
 ///   FS_DEMO_FOLDER        open the folder with this name
 ///   FS_DEMO_COMPACT       (iPad) lay out as in a narrow window (split screen, Slide Over)
 ///   FS_SELFTEST=<file>    run an end-to-end check, write the result as JSON, quit
+///   FS_SELFTEST_PENDING=<file>  relay only: upload a file without handing it to the NAS,
+///                         then download every pending upload this device can open; quit
 ///   FS_SHOTS=<dir>        (macOS) capture each page and the drop panel as PNGs, quit
 ///   FS_SHOTS_SEED=<dir>   upload <dir>/root/* to the root and <dir>/<category>/* to that category first
 @MainActor
@@ -74,6 +76,7 @@ enum DemoHooks {
                 Nav.shared.openFolder(f.id)
             }
             if let out = env["FS_SELFTEST"] { await selfTest(out) }
+            if let out = env["FS_SELFTEST_PENDING"] { await pendingTest(out) }
             #if os(macOS)
             if let dir = env["FS_SHOTS"] { await shots(dir) }
             #endif
@@ -144,6 +147,35 @@ enum DemoHooks {
             if Date() > end { throw FSError(status: 0, code: "timeout", message: "timed out: \(what)") }
             try await Task.sleep(for: .milliseconds(300))
         }
+    }
+
+    static func pendingTest(_ out: String) async {
+        var result: [String: Any] = ["ok": false]
+        do {
+            guard let r = AppModel.shared.pendingSource else { throw FSError(status: 0, code: "relay", message: "no relay") }
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("fs-pending-\(UUID().uuidString.prefix(6))")
+            try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            let content = Data((0..<(3 << 20) + 4321).map { _ in UInt8.random(in: 0...255) })
+            let src = tmp.appendingPathComponent("原生上传.bin")
+            try content.write(to: src)
+            let (blob, _) = try await r.uploadBlob(file: src, size: Int64(content.count), path: "临时/原生上传.bin",
+                                                   from: AppModel.shared.device?.name ?? "", progress: { _ in })
+            var files: [[String: Any]] = []
+            for p in try await r.pendingFiles() {
+                let dst = tmp.appendingPathComponent("dl-\(p.id)")
+                try await r.downloadPending(p, to: dst, progress: { _ in })
+                let data = try Data(contentsOf: dst)
+                if p.id == blob && data != content { throw FSError(status: 0, code: "compare", message: "own upload came back different") }
+                files.append(["id": p.id, "name": p.name, "path": p.path, "from": p.from, "size": data.count, "sha256": sha256Hex(data)])
+            }
+            result = ["ok": files.contains { $0["id"] as? String == blob }, "own": blob, "own_sha256": sha256Hex(content), "files": files]
+        } catch {
+            result["error"] = error.localizedDescription
+        }
+        let json = try? JSONSerialization.data(withJSONObject: result, options: .prettyPrinted)
+        try? json?.write(to: URL(fileURLWithPath: out))
+        exit(result["ok"] as? Bool == true ? 0 : 1)
     }
 
     /// Upload a folder, find it, download it back and compare, rename, delete.

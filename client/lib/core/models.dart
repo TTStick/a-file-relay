@@ -314,3 +314,17 @@ class ServerEvent {
         (j['target'] as String?) ?? '',
       );
 }
+
+/// A file another device uploaded to the relay that the NAS hasn't collected
+/// yet. Its description is sealed by the uploader, so the relay can't read it.
+class PendingFile {
+  PendingFile(this.id, this.name, this.path, this.size, this.mtime, this.uploaded, this.from, this.nonce);
+  final String id; // relay blob id
+  final String name;
+  final String path; // where it's going, as the uploader saw it
+  final int size;
+  final DateTime mtime;
+  final DateTime uploaded;
+  final String from; // the uploading device's name
+  final String nonce; // FSE1 header nonce of the blob
+}

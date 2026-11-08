@@ -2,7 +2,7 @@ import Foundation
 
 /// URLSession wrapper that pins self-signed server certificates by SHA-256
 /// (like SSH known_hosts) and falls back to normal validation otherwise.
-final class HTTP: NSObject, URLSessionDelegate, @unchecked Sendable {
+final class HTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     let base: URL
     let fingerprint: String?
     var bearer: String?
@@ -31,6 +31,13 @@ final class HTTP: NSObject, URLSessionDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         Self.handle(challenge, pin: fingerprint, acceptAny: acceptAny, seen: { self.seenFingerprint = $0 }, completion: completionHandler)
+    }
+
+    // Redirects are never followed: a compromised relay could otherwise point
+    // requests at hosts in the local network. The 3xx comes back as the answer.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 
     static func handle(_ challenge: URLAuthenticationChallenge, pin: String?, acceptAny: Bool, seen: (String) -> Void,
@@ -112,14 +119,14 @@ final class HTTP: NSObject, URLSessionDelegate, @unchecked Sendable {
     @discardableResult
     func json(_ r: URLRequest) async throws -> [String: Any] {
         let (status, data) = try await raw(r)
-        if status >= 400 { throw Self.error(status: status, data: data) }
+        if status >= 300 { throw Self.error(status: status, data: data) }
         if data.isEmpty { return [:] }
         return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 
     func decode<T: Decodable>(_ type: T.Type, _ r: URLRequest) async throws -> T {
         let (status, data) = try await raw(r)
-        if status >= 400 { throw Self.error(status: status, data: data) }
+        if status >= 300 { throw Self.error(status: status, data: data) }
         do { return try JSONDecoder().decode(T.self, from: data) } catch { throw FSError(status: 0, code: "decode", message: "无法解析服务器响应") }
     }
 
@@ -201,6 +208,11 @@ private final class StreamSink: NSObject, URLSessionDataDelegate, @unchecked Sen
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         HTTP.handle(challenge, pin: pin, acceptAny: acceptAny, seen: { _ in }, completion: completionHandler)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,

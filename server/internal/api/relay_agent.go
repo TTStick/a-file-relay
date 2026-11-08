@@ -99,6 +99,20 @@ func pinnedTLS(fingerprint string) (*tls.Config, error) {
 	return cfg, nil
 }
 
+// relayClients returns the HTTP clients the agent talks to the relay with:
+// one for small JSON calls, one without an overall timeout for blobs.
+//
+// Neither follows redirects. A compromised relay could otherwise answer with
+// a redirect to http://192.168.x.x/... and have the NAS send requests into the
+// home network (a plain-http target isn't even covered by the certificate pin).
+func relayClients(tc *tls.Config) (api, bulk *http.Client) {
+	tr := &http.Transport{TLSClientConfig: tc, IdleConnTimeout: time.Minute, ResponseHeaderTimeout: time.Minute,
+		Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}
+	stay := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &http.Client{Transport: tr, Timeout: time.Minute, CheckRedirect: stay},
+		&http.Client{Transport: tr, CheckRedirect: stay}
+}
+
 // StartRelay launches the relay agent (if configured). It returns when ctx ends.
 func (s *Server) StartRelay(ctx context.Context) error {
 	if !s.cfg.RelayEnabled() {
@@ -111,12 +125,11 @@ func (s *Server) StartRelay(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	tr := &http.Transport{TLSClientConfig: tc, IdleConnTimeout: time.Minute, ResponseHeaderTimeout: time.Minute,
-		Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}
+	api, bulk := relayClients(tc)
 	a := &relayAgent{
 		s: s, base: s.cfg.RelayURL,
-		api:     &http.Client{Transport: tr, Timeout: time.Minute},
-		bulk:    &http.Client{Transport: tr},
+		api:     api,
+		bulk:    bulk,
 		opTimes: map[string][]time.Time{}, reconcile: map[string]time.Time{},
 		cacheJobs: make(chan cacheJob, 256), cacheBusy: map[string]bool{},
 	}

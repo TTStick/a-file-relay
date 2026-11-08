@@ -328,6 +328,8 @@ actor RelayBackend: Backend {
                             await self.cacheArrived(j["key"] as? String ?? "")
                         case "keyring":
                             try await self.refreshKeyring()
+                        case "pending":
+                            cont.yield(ServerEvent(type: "pending"))
                         default: break
                         }
                     }
@@ -509,7 +511,10 @@ actor RelayBackend: Backend {
     // MARK: transfers
 
     /// Encrypts a file and uploads the ciphertext (resumable). Returns (blob id, header nonce).
-    func uploadBlob(file: URL, size: Int64, progress: @escaping @Sendable (Int64) -> Void) async throws -> (String, String) {
+    /// `path` and `from` describe the upload to this user's other devices, which
+    /// can fetch it from the relay until the NAS has collected it.
+    func uploadBlob(file: URL, size: Int64, path: String, from: String,
+                    progress: @escaping @Sendable (Int64) -> Void) async throws -> (String, String) {
         var (ring, kid) = creds.keyring
         if ring[kid] == nil { try await refreshKeyring(); (ring, kid) = creds.keyring }
         guard let sk = ring[kid] else { throw FSError(status: 0, code: "key", message: "缺少加密密钥，请重新配对此设备") }
@@ -529,7 +534,7 @@ actor RelayBackend: Backend {
                                                            data: data, progress: { sent in progress((start + sent) * size / max(total, 1)) })
                 let j = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
                 if status == 409, let r = j["received"] as? NSNumber { received = r.int64Value; continue }
-                if status >= 400 { throw HTTP.error(status: status, data: body) }
+                if status >= 300 { throw HTTP.error(status: status, data: body) }
                 received = (j["received"] as? NSNumber)?.int64Value ?? received
                 failures = 0
             } catch let e as FSError where e.isNetwork && e.code != "canceled" {
@@ -541,7 +546,94 @@ actor RelayBackend: Backend {
                 }
             }
         }
+        let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+        await announce(blob: id, kid: kid, key: sk, meta: [
+            "name": file.lastPathComponent, "path": path, "size": size, "nonce": enc.nonceB64, "from": from,
+            "mtime": Int64(mtime.timeIntervalSince1970 * 1000),
+        ])
         return (id, enc.nonceB64)
+    }
+
+    // MARK: pending uploads
+
+    /// Best effort: if this fails, the file simply isn't visible elsewhere
+    /// until the NAS has it.
+    private func announce(blob: String, kid: UInt32, key: Data, meta: [String: Any]) async {
+        guard let plain = try? JSONSerialization.data(withJSONObject: meta),
+              let env = try? E2E.sealEnvelope(key, plain, aad: E2E.pendingAAD(space: creds.spaceID, blob: blob)) else { return }
+        _ = try? await http.json(http.request("PUT", "/r/v1/blobs/\(blob)/announce", json: ["kid": kid, "n": env.n, "c": env.c]))
+    }
+
+    /// Uploads waiting on the relay for the NAS, newest first. Entries that
+    /// don't open with this space's keys are skipped.
+    func pendingFiles() async throws -> [PendingFile] {
+        let j = try await http.json(http.request("GET", "/r/v1/pending"))
+        let items = j["items"] as? [[String: Any]] ?? []
+        if items.contains(where: { creds.keyring.0[($0["kid"] as? NSNumber)?.uint32Value ?? 0] == nil }) {
+            try? await refreshKeyring()
+        }
+        let ring = creds.keyring.0
+        return items.compactMap { it -> PendingFile? in
+            guard let id = it["id"] as? String, let kid = (it["kid"] as? NSNumber)?.uint32Value, let key = ring[kid],
+                  let m = it["meta"] as? [String: Any],
+                  let plain = try? E2E.openEnvelope(key, .init(n: m["n"] as? String ?? "", c: m["c"] as? String ?? ""),
+                                                    aad: E2E.pendingAAD(space: creds.spaceID, blob: id)),
+                  let d = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
+                  let name = d["name"] as? String, let size = (d["size"] as? NSNumber)?.int64Value, let nonce = d["nonce"] as? String,
+                  (it["size"] as? NSNumber)?.int64Value == E2E.cipherSize(size)
+            else { return nil }
+            let ms = { (k: String, src: [String: Any]) in Date(timeIntervalSince1970: ((src[k] as? NSNumber)?.doubleValue ?? 0) / 1000) }
+            return PendingFile(id: id, name: Transfers.safeName(name), path: d["path"] as? String ?? name, size: size,
+                               mtime: ms("mtime", d), uploaded: ms("created", it), from: d["from"] as? String ?? "", nonce: nonce)
+        }
+    }
+
+    /// Downloads and decrypts a pending upload straight from the relay.
+    func downloadPending(_ p: PendingFile, to: URL, progress: @escaping @Sendable (Int64) -> Void) async throws {
+        let total = E2E.cipherSize(p.size)
+        let enc = to.appendingPathExtension("fsdownload.enc")
+        let fm = FileManager.default
+        func have() -> Int64 { (try? fm.attributesOfItem(atPath: enc.path)[.size] as? NSNumber)?.int64Value ?? 0 }
+        if have() > total { try? fm.removeItem(at: enc) }
+        var failures = 0
+        while have() < total {
+            try Task.checkCancellation()
+            do {
+                let base = have()
+                let status = try await http.download(
+                    http.request("GET", "/r/v1/pending/\(p.id)", headers: base > 0 ? ["Range": "bytes=\(base)-"] : [:]),
+                    to: enc, append: base > 0, progress: { got in progress((base + got) * p.size / max(total, 1)) })
+                if status == 404 {
+                    try? fm.removeItem(at: enc)
+                    throw FSError(status: 404, code: "gone", message: "NAS 已经收走了这个文件，请在文件列表里打开")
+                }
+                if status != 200 && status != 206 { throw FSError(status: status, code: "download", message: "下载失败 (\(status))") }
+            } catch let e as FSError where e.isNetwork && e.code != "canceled" {
+                failures += 1
+                if failures > 8 { throw e }
+                try await Task.sleep(for: .seconds(min(30, 1 << failures)))
+            }
+        }
+        // The blob has to be the one the uploader described: the relay can't
+        // forge the description, and the header nonce ties the two together.
+        guard (try? E2E.headerNonce(of: enc)) == p.nonce else {
+            try? fm.removeItem(at: enc)
+            throw E2E.AuthError()
+        }
+        let tmp = to.appendingPathExtension("fsdownload")
+        if creds.keyring.0.isEmpty { try await refreshKeyring() }
+        let ring = creds.keyring.0
+        do {
+            try await Task.detached(priority: .utility) { try E2E.decryptFile(src: enc, dst: tmp, size: p.size, ring: ring, sha: "") }.value
+        } catch {
+            try? fm.removeItem(at: enc)
+            try? fm.removeItem(at: tmp)
+            throw error
+        }
+        try? fm.removeItem(at: to)
+        try fm.moveItem(at: tmp, to: to)
+        try? fm.removeItem(at: enc)
+        try? fm.setAttributes([.modificationDate: p.mtime], ofItemAtPath: to.path)
     }
 
     /// Asks the NAS to take uploaded blobs; resolves once it has.

@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 struct DayGroupedList: View {
     let items: [Node]
     var showLocation = true
+    /// Uploads still on the relay, shown above everything else.
+    var pending: [PendingFile] = []
 
     private var groups: [(String, [Node])] {
         var out: [(String, [Node])] = []
@@ -17,6 +19,24 @@ struct DayGroupedList: View {
 
     var body: some View {
         List {
+            if !pending.isEmpty {
+                Section {
+                    ForEach(pending) { p in
+                        PendingRow(file: p)
+                            .contentShape(.rect)
+                            .onTapGesture(count: 2) { ActionCenter.shared.open(p) }
+                            #if os(iOS)
+                            .onTapGesture { ActionCenter.shared.open(p) }
+                            #endif
+                            .contextMenu {
+                                Button("预览", systemImage: "eye") { ActionCenter.shared.open(p) }
+                                Button("下载", systemImage: "arrow.down.circle") { ActionCenter.shared.download(p) }
+                            }
+                    }
+                } header: {
+                    Text("还没到 NAS · 可直接从中转站下载")
+                }
+            }
             ForEach(groups, id: \.0) { day, nodes in
                 Section(day) {
                     ForEach(nodes) { n in
@@ -43,13 +63,14 @@ struct TimelineView: View {
     @Environment(AppModel.self) private var model
     @State private var filter = ""
     @State private var items: [Node] = []
+    @State private var pending: [PendingFile] = []
     @State private var loaded = false
 
     var body: some View {
-        DayGroupedList(items: items)
+        DayGroupedList(items: items, pending: filter.isEmpty ? pending : [])
             .safeAreaInset(edge: .top, spacing: 0) { chips }
             .overlay {
-                if loaded && items.isEmpty {
+                if loaded && items.isEmpty && (pending.isEmpty || !filter.isEmpty) {
                     EmptyState(symbol: "clock", title: "还没有投递记录", hint: "上传或拖到菜单栏投递面板的文件，会按时间出现在这里")
                 }
             }
@@ -59,6 +80,7 @@ struct TimelineView: View {
             #endif
             .task(id: "\(filter)#\(model.revision)") {
                 items = (try? await model.backend?.timeline(before: nil, category: filter)) ?? []
+                pending = (try? await model.pendingSource?.pendingFiles()) ?? []
                 loaded = true
             }
     }

@@ -59,6 +59,19 @@ final class HardeningTests: XCTestCase {
         XCTAssertThrowsError(try E2E.gunzip(gz, limit: 1 << 20))
     }
 
+    // A redirect could point into the local network, so none is ever followed.
+    func testRedirectsAreRefused() {
+        let h = HTTP(base: URL(string: "https://127.0.0.1:1")!, fingerprint: nil)
+        defer { h.invalidate() }
+        let task = URLSession.shared.dataTask(with: URL(string: "https://127.0.0.1:1")!)
+        let resp = HTTPURLResponse(url: task.originalRequest!.url!, statusCode: 302, httpVersion: nil,
+                                   headerFields: ["Location": "http://192.168.1.1/cgi-bin/reboot"])!
+        var followed: URLRequest? = URLRequest(url: URL(string: "about:blank")!)
+        h.urlSession(URLSession.shared, task: task, willPerformHTTPRedirection: resp,
+                     newRequest: URLRequest(url: URL(string: "http://192.168.1.1/cgi-bin/reboot")!)) { followed = $0 }
+        XCTAssertNil(followed)
+    }
+
     // The pin has to be checked even when the system would trust the certificate.
     func testPinAppliesToCATrustedCertificates() async throws {
         let site = URL(string: "https://www.apple.com")!

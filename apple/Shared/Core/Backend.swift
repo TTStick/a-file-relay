@@ -275,7 +275,7 @@ final class DirectBackend: Backend, @unchecked Sendable {
             if let categoryID { q["category_id"] = categoryID }
             let data = try Data(contentsOf: file)
             let (status, body) = try await http.upload(http.request("PUT", "/api/v1/files", query: q), data: data, progress: progress)
-            if status >= 400 { throw HTTP.error(status: status, data: body) }
+            if status >= 300 { throw HTTP.error(status: status, data: body) }
             return
         }
         var b: [String: Any] = ["path": relPath, "size": size, "mtime": mtime, "timeline": timeline, "conflict": "rename"]
@@ -298,7 +298,7 @@ final class DirectBackend: Backend, @unchecked Sendable {
                                                            data: data, progress: { progress(base + $0) })
                 let j = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
                 if status == 409, let r = j["received"] as? NSNumber { received = r.int64Value; continue }
-                if status >= 400 { throw HTTP.error(status: status, data: body) }
+                if status >= 300 { throw HTTP.error(status: status, data: body) }
                 received = (j["received"] as? NSNumber)?.int64Value ?? received
                 failures = 0
             } catch let e as FSError where e.isNetwork && e.code != "canceled" {
@@ -328,7 +328,7 @@ final class DirectBackend: Backend, @unchecked Sendable {
                 let status = try await http.download(http.request("GET", "/api/v1/nodes/\(n.id)/content", headers: headers),
                                                      to: part, append: have > 0, progress: { progress(base + $0) })
                 if status == 416 { try? FileManager.default.removeItem(at: part); continue }
-                if status >= 400 { throw FSError(status: status, code: "download", message: "下载失败 (\(status))") }
+                if status >= 300 { throw FSError(status: status, code: "download", message: "下载失败 (\(status))") }
                 break
             } catch let e as FSError where e.isNetwork && e.code != "canceled" {
                 failures += 1

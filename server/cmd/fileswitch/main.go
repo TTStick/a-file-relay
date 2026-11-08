@@ -176,7 +176,10 @@ func listen(ctx context.Context, log *slog.Logger, cfg *config.Config, h http.Ha
 		// let "OPTIONS *" reach our handler (and its auth and headers) instead
 		// of Go's built-in reply
 		DisableGeneralOptionsHandler: true,
-		ErrorLog:                     slog.NewLogLogger(log.Handler(), slog.LevelDebug),
+		// requests end with the process: event streams would otherwise keep
+		// Shutdown waiting until its deadline
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		ErrorLog:    slog.NewLogLogger(log.Handler(), slog.LevelDebug),
 	}
 	if tlsOn {
 		cert, err := tlsutil.Load(filepath.Join(cfg.DataDir, "tls"), cfg.TLSCert, cfg.TLSKey, cfg.TLSHosts)
@@ -209,7 +212,11 @@ func listen(ctx context.Context, log *slog.Logger, cfg *config.Config, h http.Ha
 	log.Info("正在关闭…")
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return hs.Shutdown(sctx)
+	if err := hs.Shutdown(sctx); err != nil {
+		// a client that doesn't hang up in time isn't a reason to exit with an error
+		hs.Close()
+	}
+	return nil
 }
 
 func runRelay() error {

@@ -142,6 +142,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /r/v1/blobs/{id}", c(s.blobStatus))
 	mux.Handle("PUT /r/v1/blobs/{id}", c(s.putBlob))
 	mux.Handle("DELETE /r/v1/blobs/{id}", c(s.deleteOwnBlob))
+	mux.Handle("PUT /r/v1/blobs/{id}/announce", c(s.announceBlob))
+	mux.Handle("GET /r/v1/pending", c(s.listPending))
+	mux.Handle("GET /r/v1/pending/{id}", c(s.getPending))
 	mux.Handle("POST /r/v1/cache/lookup", c(s.cacheLookup))
 	mux.Handle("GET /r/v1/cache/{key}", c(s.getCache))
 	mux.Handle("GET /r/v1/events", c(s.events))
@@ -615,8 +618,97 @@ func (s *Server) deleteOwnBlob(w http.ResponseWriter, r *http.Request, d devCtx)
 }
 
 func (s *Server) removeBlob(id string) {
+	var space string
+	announced := s.db.QueryRow(`SELECT space FROM pending WHERE blob_id = ?`, id).Scan(&space) == nil
+	s.db.Exec(`DELETE FROM pending WHERE blob_id = ?`, id)
 	s.db.Exec(`DELETE FROM blobs WHERE id = ?`, id)
 	os.Remove(s.blobPath(id))
+	if announced {
+		s.publish(space, "", map[string]any{"type": "pending"})
+	}
+}
+
+// announceBlob stores the uploader's sealed description of a finished upload.
+// Until the NAS collects the blob, the space's other devices can list and
+// download it; all the relay keeps is the ciphertext of the description.
+func (s *Server) announceBlob(w http.ResponseWriter, r *http.Request, d devCtx) error {
+	b, err := s.ownBlob(d, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if b.Received != b.Size {
+		return errf(409, "upload not complete")
+	}
+	var req struct {
+		Kid uint32 `json:"kid"`
+		envelope
+	}
+	if err := readJSON(r, &req, 16<<10); err != nil {
+		return err
+	}
+	if !req.valid(8 << 10) {
+		return errf(400, "bad announcement")
+	}
+	meta, _ := json.Marshal(req.envelope)
+	if _, err := s.db.Exec(`INSERT INTO pending(blob_id, space, device_id, kid, meta, created) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(blob_id) DO UPDATE SET kid = excluded.kid, meta = excluded.meta`,
+		b.ID, d.space, d.device, req.Kid, string(meta), now()); err != nil {
+		return err
+	}
+	s.publish(d.space, "", map[string]any{"type": "pending"})
+	w.WriteHeader(204)
+	return nil
+}
+
+func (s *Server) listPending(w http.ResponseWriter, r *http.Request, d devCtx) error {
+	rows, err := s.db.Query(`SELECT p.blob_id, p.device_id, p.kid, p.meta, p.created, b.size FROM pending p
+		JOIN blobs b ON b.id = p.blob_id
+		WHERE p.space = ? AND b.kind = 'up' AND b.received = b.size
+		ORDER BY p.created DESC LIMIT 1000`, d.space)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type item struct {
+		ID      string          `json:"id"`
+		Device  string          `json:"device"`
+		Kid     uint32          `json:"kid"`
+		Meta    json.RawMessage `json:"meta"`
+		Created int64           `json:"created"`
+		Size    int64           `json:"size"`
+	}
+	items := []item{}
+	for rows.Next() {
+		var it item
+		var meta string
+		if err := rows.Scan(&it.ID, &it.Device, &it.Kid, &meta, &it.Created, &it.Size); err != nil {
+			return err
+		}
+		it.Meta = json.RawMessage(meta)
+		items = append(items, it)
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
+	return rows.Err()
+}
+
+func (s *Server) getPending(w http.ResponseWriter, r *http.Request, d devCtx) error {
+	id := r.PathValue("id")
+	if !reID.MatchString(id) {
+		return errNotFound
+	}
+	var size, received, updated int64
+	if err := s.db.QueryRow(`SELECT b.size, b.received, b.updated FROM pending p JOIN blobs b ON b.id = p.blob_id
+		WHERE p.blob_id = ? AND p.space = ? AND b.kind = 'up'`, id, d.space).Scan(&size, &received, &updated); err != nil || received != size {
+		return errNotFound
+	}
+	f, err := os.Open(s.blobPath(id))
+	if err != nil {
+		return errNotFound
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	http.ServeContent(w, r, "", time.UnixMilli(updated), f)
+	return nil
 }
 
 func (s *Server) cacheLookup(w http.ResponseWriter, r *http.Request, d devCtx) error {
@@ -1040,7 +1132,7 @@ func (s *Server) deleteSpace(w http.ResponseWriter, r *http.Request) error {
 	for _, id := range ids {
 		s.removeBlob(id)
 	}
-	for _, t := range []string{"devices", "ops", "replies", "snapshots", "keyrings"} {
+	for _, t := range []string{"devices", "ops", "replies", "snapshots", "keyrings", "pending"} {
 		s.db.Exec(`DELETE FROM `+t+` WHERE space = ?`, space)
 	}
 	w.WriteHeader(204)

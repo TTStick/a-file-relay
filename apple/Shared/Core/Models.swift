@@ -59,6 +59,24 @@ struct Node: Identifiable, Hashable, Decodable, Sendable {
     var isImage: Bool { ["jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "tiff"].contains(ext) }
 }
 
+/// A file another device uploaded to the relay that the NAS hasn't collected
+/// yet. Its description is sealed by the uploader, so the relay can't read it.
+struct PendingFile: Identifiable, Hashable, Sendable {
+    let id: String        // relay blob id
+    let name: String
+    let path: String      // where it's going, as the uploader saw it, e.g. "临时/会议/录音.m4a"
+    let size: Int64
+    let mtime: Date
+    let uploaded: Date
+    let from: String      // the uploading device's name
+    let nonce: String     // FSE1 header nonce of the blob
+
+    var ext: String {
+        guard let i = name.lastIndex(of: "."), i != name.startIndex else { return "" }
+        return name[name.index(after: i)...].lowercased()
+    }
+}
+
 struct Crumb: Hashable, Decodable, Sendable {
     var id: String
     var name: String

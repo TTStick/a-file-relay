@@ -3,6 +3,8 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -420,5 +422,43 @@ func TestSecondNASKeepsItsOps(t *testing.T) {
 		if r := b.await(b.send(map[string]any{"t": "ping"})); !r.OK {
 			t.Fatalf("ping %d: %s", i, r.Error)
 		}
+	}
+}
+
+// A compromised relay must not be able to bounce the NAS's requests to another
+// host, least of all to a plain-http address inside the home network.
+func TestRelayRedirectsAreNotFollowed(t *testing.T) {
+	var hits int
+	canary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	t.Cleanup(canary.Close)
+	evil := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		code := http.StatusFound
+		if r.Method != http.MethodGet {
+			code = http.StatusTemporaryRedirect // keeps method and body
+		}
+		http.Redirect(w, r, canary.URL+"/cgi-bin/reboot", code)
+	}))
+	t.Cleanup(evil.Close)
+	sum := sha256.Sum256(evil.Certificate().Raw)
+	tc, err := pinnedTLS(hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, bulk := relayClients(tc)
+	for _, c := range []*http.Client{api, bulk} {
+		for _, m := range []string{http.MethodGet, http.MethodPut} {
+			req, _ := http.NewRequest(m, evil.URL+"/n/v1/poll", strings.NewReader("x"))
+			resp, err := c.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode/100 != 3 {
+				t.Fatalf("%s: status %d", m, resp.StatusCode)
+			}
+		}
+	}
+	if hits != 0 {
+		t.Fatalf("the NAS followed the relay's redirect %d times", hits)
 	}
 }

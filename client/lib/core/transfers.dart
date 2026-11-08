@@ -200,7 +200,11 @@ class TransferManager extends ChangeNotifier {
           }
 
           if (api is RelayBackend) {
-            final (blob, nonce) = await api.uploadBlob(f, t.totalBytes, cancel: t.cancel, onProgress: progress);
+            final (blob, nonce) = await api.uploadBlob(f, t.totalBytes,
+                path: _label([t.destination, p.basename(f.path)]),
+                from: AppState.instance.device?.name ?? '',
+                cancel: t.cancel,
+                onProgress: progress);
             t.phase = '等待 NAS 接收…';
             _changed();
             final r = await api.commitUpload({
@@ -352,7 +356,10 @@ class TransferManager extends ChangeNotifier {
           await _pool.run(() async {
             t.cancel.check();
             final size = await files[i].length();
-            final (blob, nonce) = await api.uploadBlob(files[i], size, cancel: t.cancel, onProgress: (sent) {
+            final (blob, nonce) = await api.uploadBlob(files[i], size,
+                path: _label([t.destination, p.basename(dir.path), rels[i]]),
+                from: AppState.instance.device?.name ?? '',
+                cancel: t.cancel, onProgress: (sent) {
               t.doneBytes += sent - progress[i];
               progress[i] = sent;
               _changed();
@@ -485,6 +492,48 @@ class TransferManager extends ChangeNotifier {
   }
 
   /// Downloads a file into the cache (for "open"), reusing an earlier copy.
+  static String _label(List<String> parts) => parts.where((s) => s.isNotEmpty).join('/');
+
+  /// Downloads a file that is still waiting on the relay for the NAS.
+  Transfer downloadPending(PendingFile f, {String? toDir}) {
+    final t = _add(Transfer(TransferKind.download, f.name));
+    () async {
+      try {
+        final api = AppState.instance.pendingSource;
+        if (api == null) throw ApiException(0, 'relay', '此设备没有开通中转访问');
+        final dir = toDir ?? await defaultDownloadDir();
+        await Directory(dir).create(recursive: true);
+        t.status = TransferStatus.running;
+        t.totalBytes = f.size;
+        t.totalFiles = 1;
+        final target = await _uniquePath(p.join(dir, safeName(f.name)));
+        t.localPath = target;
+        _changed();
+        await _pool.run(() => api.downloadPending(f, File(target), cancel: t.cancel, onProgress: (got) {
+              t.doneBytes = got;
+              _changed();
+            }));
+        t.doneFiles = 1;
+        _finish(t);
+      } catch (e) {
+        _finish(t, e);
+      }
+    }();
+    return t;
+  }
+
+  Future<String> fetchPendingToCache(PendingFile f) async {
+    final dir = Directory(p.join((await getTemporaryDirectory()).path, 'fileswitch-open', 'pending-${f.id}'));
+    final target = File(p.join(dir.path, safeName(f.name)));
+    if (await target.exists() && await target.length() == f.size) return target.path;
+    if (await dir.exists()) await dir.delete(recursive: true);
+    await dir.create(recursive: true);
+    final t = downloadPending(f, toDir: dir.path);
+    await t.finished;
+    if (t.status != TransferStatus.done) throw ApiException(0, 'failed', t.error ?? '已取消');
+    return t.localPath!;
+  }
+
   Future<String> fetchToCache(Node n) async {
     final dir = Directory(p.join((await getTemporaryDirectory()).path, 'fileswitch-open', n.id));
     final target = File(p.join(dir.path, safeName(n.name)));

@@ -53,22 +53,24 @@ enum Fmt {
 
 extension Node {
     /// SF Symbol and tint for the file type.
-    var symbol: (String, Color) {
-        if isDir { return ("folder.fill", .blue) }
-        switch ext {
-        case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "tiff", "svg": return ("photo.fill", .green)
-        case "mp4", "mov", "mkv", "avi", "m4v", "webm": return ("film.fill", .red)
-        case "mp3", "flac", "wav", "aac", "m4a", "ogg": return ("music.note", .pink)
-        case "pdf": return ("doc.richtext.fill", .red)
-        case "doc", "docx", "pages", "rtf": return ("doc.text.fill", .blue)
-        case "xls", "xlsx", "numbers", "csv": return ("tablecells.fill", .green)
-        case "ppt", "pptx", "key": return ("rectangle.on.rectangle.angled.fill", .orange)
-        case "zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg": return ("archivebox.fill", .brown)
-        case "md", "txt", "log": return ("doc.plaintext.fill", .gray)
-        case "swift", "go", "dart", "js", "ts", "py", "json", "yaml", "yml", "sh", "html", "css": return ("chevron.left.forwardslash.chevron.right", .indigo)
-        case "apk", "exe", "msi", "ipa", "app": return ("app.badge.fill", .teal)
-        default: return ("doc.fill", .secondary)
-        }
+    var symbol: (String, Color) { fileSymbol(ext: ext, isDir: isDir) }
+}
+
+func fileSymbol(ext: String, isDir: Bool) -> (String, Color) {
+    if isDir { return ("folder.fill", .blue) }
+    switch ext {
+    case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "tiff", "svg": return ("photo.fill", .green)
+    case "mp4", "mov", "mkv", "avi", "m4v", "webm": return ("film.fill", .red)
+    case "mp3", "flac", "wav", "aac", "m4a", "ogg": return ("music.note", .pink)
+    case "pdf": return ("doc.richtext.fill", .red)
+    case "doc", "docx", "pages", "rtf": return ("doc.text.fill", .blue)
+    case "xls", "xlsx", "numbers", "csv": return ("tablecells.fill", .green)
+    case "ppt", "pptx", "key": return ("rectangle.on.rectangle.angled.fill", .orange)
+    case "zip", "rar", "7z", "tar", "gz", "dmg", "iso", "pkg": return ("archivebox.fill", .brown)
+    case "md", "txt", "log": return ("doc.plaintext.fill", .gray)
+    case "swift", "go", "dart", "js", "ts", "py", "json", "yaml", "yml", "sh", "html", "css": return ("chevron.left.forwardslash.chevron.right", .indigo)
+    case "apk", "exe", "msi", "ipa", "app": return ("app.badge.fill", .teal)
+    default: return ("doc.fill", .secondary)
     }
 }
 
@@ -77,8 +79,15 @@ struct NodeIcon: View {
     let node: Node
     var size: CGFloat = 32
 
+    var body: some View { TypeIcon(symbol: node.symbol, size: size) }
+}
+
+struct TypeIcon: View {
+    let symbol: (String, Color)
+    var size: CGFloat = 32
+
     var body: some View {
-        let (sym, tint) = node.symbol
+        let (sym, tint) = symbol
         Image(systemName: sym)
             .font(.system(size: size * 0.5, weight: .medium))
             .foregroundStyle(tint)
@@ -210,6 +219,35 @@ struct TimeRow: View {
         var parts = [node.createdAt.formatted(date: .omitted, time: .shortened), Fmt.subtitle(node)]
         if !node.deviceName.isEmpty { parts.append("来自 \(node.deviceName)") }
         if showLocation && !node.location.isEmpty { parts.append("位于 \(node.location)") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// An upload that is on the relay but not yet on the NAS.
+struct PendingRow: View {
+    let file: PendingFile
+
+    var body: some View {
+        HStack(spacing: 12) {
+            TypeIcon(symbol: fileSymbol(ext: file.ext, isDir: false), size: 38)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(file.name).lineLimit(1)
+                    Text("中转站").font(.caption2.weight(.medium)).foregroundStyle(.orange)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(.orange.opacity(0.14), in: .capsule)
+                }
+                Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var meta: String {
+        var parts = [file.uploaded.formatted(date: .omitted, time: .shortened), Fmt.bytes(file.size)]
+        if !file.from.isEmpty { parts.append("来自 \(file.from)") }
+        parts.append("发往 \(file.path)")
         return parts.joined(separator: " · ")
     }
 }

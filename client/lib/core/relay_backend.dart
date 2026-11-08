@@ -5,11 +5,13 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:path/path.dart' as p;
 
 import 'api.dart';
 import 'backend.dart';
 import 'e2e.dart';
 import 'models.dart';
+import 'transfers.dart' show safeName;
 
 /// Credentials of a device enrolled for relay access (kept in the keychain).
 /// Stored in the same shape as the NAS's enrollment bundle.
@@ -193,7 +195,9 @@ class RelayBackend with ChangeNotifier implements Backend {
     HttpClientRequest? req;
     void Function()? unhook;
     try {
-      req = await _http.openUrl(method, _uri(path, query));
+      // never follow redirects: a compromised relay could point them into the local network
+      req = await _http.openUrl(method, _uri(path, query))
+        ..followRedirects = false;
       final r = req;
       unhook = cancel?.onCancel(() => r.abort(CanceledException()));
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${creds.token}');
@@ -221,7 +225,7 @@ class RelayBackend with ChangeNotifier implements Backend {
     final resp = await _send(method, path, json: json, query: query);
     final text = await utf8.decodeStream(resp).timeout(const Duration(minutes: 1), onTimeout: () => throw _wrapNet(TimeoutException('')));
     if (resp.statusCode == 401) throw ApiException(401, 'unauthorized', '此设备的中转授权已失效');
-    if (resp.statusCode >= 400) {
+    if (resp.statusCode >= 300) {
       String msg = '中转站错误 (${resp.statusCode})';
       try {
         msg = ((jsonDecode(text) as Map)['error'] as Map)['message'] as String;
@@ -418,6 +422,8 @@ class RelayBackend with ChangeNotifier implements Backend {
             _cacheWaiters.remove(j['key'])?.complete();
           case 'keyring':
             await _refreshKeyring();
+          case 'pending':
+            yield ServerEvent('pending', null, '', '', '', '');
         }
       }
     } catch (e) {
@@ -690,7 +696,10 @@ class RelayBackend with ChangeNotifier implements Backend {
 
   /// Encrypts a file and uploads the ciphertext to the relay (resumable).
   /// Returns the relay blob id and the blob's header nonce for the op.
-  Future<(String, String)> uploadBlob(File f, int size, {void Function(int sent)? onProgress, CancelToken? cancel}) async {
+  /// [path] and [from] describe the upload to this user's other devices, which
+  /// can fetch it from the relay until the NAS has collected it.
+  Future<(String, String)> uploadBlob(File f, int size,
+      {String path = '', String from = '', void Function(int sent)? onProgress, CancelToken? cancel}) async {
     var ring = creds.keyring;
     var kid = creds.current;
     if (ring[kid] == null) {
@@ -716,7 +725,7 @@ class RelayBackend with ChangeNotifier implements Backend {
           received = (j['received'] as num).toInt();
           continue;
         }
-        if (resp.statusCode >= 400) {
+        if (resp.statusCode >= 300) {
           throw ApiException(resp.statusCode, 'relay', ((j['error'] as Map?)?['message'] as String?) ?? '上传失败');
         }
         received = (j['received'] as num).toInt();
@@ -729,7 +738,127 @@ class RelayBackend with ChangeNotifier implements Backend {
         received = ((st as Map)['received'] as num).toInt();
       }
     }
+    await _announce(id, kid, ring[kid]!, {
+      'name': p.basename(f.path),
+      'path': path.isEmpty ? p.basename(f.path) : path,
+      'size': size,
+      'nonce': enc.nonceB64,
+      'from': from,
+      'mtime': (await f.lastModified()).millisecondsSinceEpoch,
+    });
     return (id, enc.nonceB64);
+  }
+
+  // --- pending uploads ---
+
+  /// Best effort: if this fails the file just isn't visible elsewhere until
+  /// the NAS has it.
+  Future<void> _announce(String blob, int kid, List<int> key, Map<String, dynamic> meta) async {
+    try {
+      final env = await sealEnvelope(key, utf8.encode(jsonEncode(meta)), pendingAAD(creds.spaceId, blob));
+      await _call('PUT', '/r/v1/blobs/$blob/announce', json: {'kid': kid, ...env});
+    } catch (_) {}
+  }
+
+  /// Uploads waiting on the relay for the NAS, newest first. Entries that don't
+  /// open with this space's keys are skipped.
+  Future<List<PendingFile>> pendingFiles() async {
+    final j = await _call('GET', '/r/v1/pending') as Map;
+    final items = (j['items'] as List).whereType<Map>().toList();
+    if (items.any((it) => creds.keyring[(it['kid'] as num?)?.toInt() ?? -1] == null)) {
+      try {
+        await _refreshKeyring();
+      } catch (_) {}
+    }
+    final out = <PendingFile>[];
+    for (final it in items) {
+      try {
+        final id = it['id'] as String;
+        final key = creds.keyring[(it['kid'] as num).toInt()];
+        if (key == null) continue;
+        final plain = await openEnvelope(key, it['meta'] as Map, pendingAAD(creds.spaceId, id));
+        final d = jsonDecode(utf8.decode(plain)) as Map;
+        final size = (d['size'] as num).toInt();
+        if ((it['size'] as num).toInt() != cipherSize(size)) continue;
+        final name = safeName(d['name'] as String);
+        out.add(PendingFile(
+          id,
+          name,
+          (d['path'] as String?) ?? name,
+          size,
+          DateTime.fromMillisecondsSinceEpoch((d['mtime'] as num?)?.toInt() ?? 0),
+          DateTime.fromMillisecondsSinceEpoch((it['created'] as num?)?.toInt() ?? 0),
+          (d['from'] as String?) ?? '',
+          d['nonce'] as String,
+        ));
+      } catch (_) {
+        // not ours to show
+      }
+    }
+    return out;
+  }
+
+  /// Downloads and decrypts a pending upload straight from the relay.
+  Future<void> downloadPending(PendingFile f, File target, {void Function(int got)? onProgress, CancelToken? cancel}) async {
+    final total = cipherSize(f.size);
+    final enc = File('${target.path}.fsdownload.enc');
+    var have = await enc.exists() ? await enc.length() : 0;
+    if (have > total) {
+      await enc.delete();
+      have = 0;
+    }
+    var failures = 0;
+    while (have < total) {
+      cancel?.check();
+      try {
+        final resp = await _send('GET', '/r/v1/pending/${f.id}',
+            headers: {if (have > 0) HttpHeaders.rangeHeader: 'bytes=$have-'}, cancel: cancel);
+        if (resp.statusCode == 404) {
+          await resp.drain<void>();
+          if (await enc.exists()) await enc.delete();
+          throw ApiException(404, 'gone', 'NAS 已经收走了这个文件，请在文件列表里打开');
+        }
+        if (resp.statusCode != 200 && resp.statusCode != 206) {
+          await resp.drain<void>();
+          throw ApiException(resp.statusCode, 'relay', '下载失败 (${resp.statusCode})');
+        }
+        final sink = enc.openWrite(mode: resp.statusCode == 206 ? FileMode.append : FileMode.write);
+        if (resp.statusCode == 200) have = 0;
+        try {
+          await sink.addStream(resp.timeout(const Duration(seconds: 60)).map((c) {
+            have += c.length;
+            onProgress?.call((have * f.size / total).floor());
+            return c;
+          }));
+        } finally {
+          await sink.close();
+        }
+        failures = 0;
+      } on ApiException catch (e) {
+        if (!e.network || ++failures > 8) rethrow;
+        await Future.delayed(Duration(seconds: min(30, 1 << failures)));
+        have = await enc.exists() ? await enc.length() : 0;
+      } on TimeoutException {
+        if (++failures > 8) rethrow;
+        have = await enc.exists() ? await enc.length() : 0;
+      }
+    }
+    // The blob has to be the one the uploader described: the relay can't forge
+    // the description, and the header nonce ties the two together.
+    if (await headerNonceOf(enc.path) != f.nonce) {
+      await enc.delete();
+      throw E2EAuthError();
+    }
+    final tmp = '${target.path}.fsdownload';
+    try {
+      await decryptFile(enc.path, tmp, f.size, creds.keyring, '');
+    } finally {
+      if (await enc.exists()) await enc.delete();
+    }
+    await File(tmp).rename(target.path);
+    try {
+      await target.setLastModified(f.mtime);
+    } catch (_) {}
   }
 
   /// Asks the NAS to ingest uploaded blobs; resolves once it has.
@@ -920,7 +1049,8 @@ class RelayBackend with ChangeNotifier implements Backend {
     Uri at(String p) => base.replace(path: '${base.path}$p');
     try {
       onStatus?.call('正在连接中转站…');
-      final req = await http.postUrl(at('/r/v1/pair/$lookup'));
+      final req = await http.postUrl(at('/r/v1/pair/$lookup'))
+        ..followRedirects = false;
       final body = utf8.encode(jsonEncode(
           await sealEnvelope(key, utf8.encode(jsonEncode({'device_name': deviceName, 'platform': platform})), pairReqAAD(lookup))));
       req.headers.contentType = ContentType.json;
@@ -934,7 +1064,8 @@ class RelayBackend with ChangeNotifier implements Backend {
       while (DateTime.now().isBefore(deadline)) {
         cancel?.check();
         await Future.delayed(const Duration(seconds: 2));
-        final r = await http.getUrl(at('/r/v1/pair/$lookup'));
+        final r = await http.getUrl(at('/r/v1/pair/$lookup'))
+          ..followRedirects = false;
         final rr = await r.close().timeout(const Duration(seconds: 30));
         final text = await utf8.decodeStream(rr);
         if (rr.statusCode != 200) continue;

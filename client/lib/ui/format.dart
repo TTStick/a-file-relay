@@ -52,9 +52,16 @@ String formatSpeed(double bps) => bps <= 0 ? '' : '${formatBytes(bps.round())}/s
 
 String nodeSubtitle(Node n) => n.isDir ? '${n.childCount} 项' : formatBytes(n.size);
 
-(IconData, Color) nodeIcon(Node n) {
-  if (n.isDir) return (Icons.folder_rounded, const Color(0xFF5B8DEF));
-  switch (n.ext) {
+(IconData, Color) nodeIcon(Node n) =>
+    n.isDir ? (Icons.folder_rounded, const Color(0xFF5B8DEF)) : iconForExt(n.ext);
+
+(IconData, Color) iconForName(String name) {
+  final i = name.lastIndexOf('.');
+  return iconForExt(i > 0 ? name.substring(i + 1).toLowerCase() : '');
+}
+
+(IconData, Color) iconForExt(String ext) {
+  switch (ext) {
     case 'jpg' || 'jpeg' || 'png' || 'gif' || 'webp' || 'bmp' || 'heic' || 'svg' || 'tiff':
       return (Icons.image_rounded, const Color(0xFF2EAD6B));
     case 'mp4' || 'mov' || 'mkv' || 'avi' || 'webm' || 'm4v':

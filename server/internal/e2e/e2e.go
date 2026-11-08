@@ -108,6 +108,10 @@ func KeyringAAD(deviceID string) string     { return "fskr1|" + deviceID }
 func PairReqAAD(lookup string) string       { return "fspq1|" + lookup }
 func PairRespAAD(lookup string) string      { return "fsps1|" + lookup }
 
+// PendingAAD binds a pending-upload description to its space and blob, so the
+// relay can't move it to another space or attach it to a different upload.
+func PendingAAD(space, blobID string) string { return "fspend1|" + space + "|" + blobID }
+
 // Pairing derives the relay lookup id and the envelope key from the one-time
 // pairing secret. The secret itself never reaches the relay.
 func Pairing(secret []byte) (lookup string, key []byte) {

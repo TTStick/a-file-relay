@@ -56,6 +56,22 @@ Future<Uint8List> open(List<int> key, List<int> nonce, List<int> ct, List<int> a
 // --- envelopes (ops, replies, keyrings, pairing) ---
 
 String opAAD(String device, String op) => 'fsop1|$device|$op';
+
+/// Binds a pending-upload description to its space and blob.
+String pendingAAD(String space, String blob) => 'fspend1|$space|$blob';
+
+/// The random nonce in an FSE1 header (base64), which ties a blob to the
+/// description its uploader sealed.
+Future<String> headerNonceOf(String path) async {
+  final raf = await File(path).open();
+  try {
+    final h = await raf.read(12 + nonceSize);
+    if (h.length != 12 + nonceSize) throw E2EAuthError();
+    return base64.encode(h.sublist(12));
+  } finally {
+    await raf.close();
+  }
+}
 String replyAAD(String device, String op) => 'fsrp1|$device|$op';
 String keyringAAD(String device) => 'fskr1|$device';
 String pairReqAAD(String lookup) => 'fspq1|$lookup';

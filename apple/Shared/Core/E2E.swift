@@ -21,6 +21,18 @@ enum E2E {
     static func keyringAAD(_ device: String) -> String { "fskr1|\(device)" }
     static func pairReqAAD(_ lookup: String) -> String { "fspq1|\(lookup)" }
     static func pairRespAAD(_ lookup: String) -> String { "fsps1|\(lookup)" }
+    /// Binds a pending-upload description to its space and blob.
+    static func pendingAAD(space: String, blob: String) -> String { "fspend1|\(space)|\(blob)" }
+
+    /// The random nonce in an FSE1 header (base64), which ties a blob to the
+    /// description sealed by its uploader.
+    static func headerNonce(of file: URL) throws -> String {
+        let h = try FileHandle(forReadingFrom: file)
+        defer { try? h.close() }
+        let hdr = try h.read(upToCount: 12 + nonceSize) ?? Data()
+        guard hdr.count == 12 + nonceSize else { throw AuthError() }
+        return hdr.subdata(in: 12..<(12 + nonceSize)).base64EncodedString()
+    }
 
     struct Envelope: Codable {
         let n: String

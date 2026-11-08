@@ -66,6 +66,19 @@ CREATE TABLE IF NOT EXISTS blobs (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS blobs_cache ON blobs(space, cache_key) WHERE kind = 'cache';
 
+-- Uploads the NAS hasn't collected yet, described by the uploading device
+-- (name, folder, size, header nonce) sealed with the space key, so the user's
+-- other devices can fetch them from here in the meantime.
+CREATE TABLE IF NOT EXISTS pending (
+	blob_id   TEXT PRIMARY KEY,
+	space     TEXT NOT NULL,
+	device_id TEXT NOT NULL,
+	kid       INTEGER NOT NULL,
+	meta      TEXT NOT NULL,
+	created   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS pending_space ON pending(space);
+
 CREATE TABLE IF NOT EXISTS pairs (
 	lookup  TEXT PRIMARY KEY,
 	req     TEXT NOT NULL DEFAULT '',

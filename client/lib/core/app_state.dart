@@ -77,6 +77,11 @@ class AppState extends ChangeNotifier {
 
   bool get signedIn => api != null;
   bool get viaRelay => api?.isRemote ?? false;
+
+  /// Where uploads still waiting on the relay are listed and fetched: the relay
+  /// backend itself, or on the LAN a relay connection kept just for that.
+  RelayBackend? get pendingSource => api is RelayBackend ? api as RelayBackend : _lanRelay;
+  RelayBackend? _lanRelay;
   RelayBackend? get relay => api is RelayBackend ? api as RelayBackend : null;
 
   Category? categoryById(String id) => categories.where((c) => c.id == id).firstOrNull;
@@ -224,6 +229,12 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
     await refreshSession(gen);
+    _lanRelay?.close();
+    _lanRelay = null;
+    if (b is ApiClient) {
+      final relayJson = await Storage.relay(p.id);
+      if (relayJson != null) _lanRelay = _relayBackend(p, RelayCreds(relayJson));
+    }
     if (gen == _generation && api != null) {
       _startEvents(gen);
       _scheduleModeCheck();
@@ -240,6 +251,7 @@ class AppState extends ChangeNotifier {
       final bundle = await direct.enrollRelay();
       await Storage.setRelay(p.id, bundle);
       p.relayUrl = RelayCreds(bundle).url;
+      if (api is ApiClient) _lanRelay ??= _relayBackend(p, RelayCreds(bundle));
       await upsertProfile(p);
       _notices.add('此设备已开通中转访问：离开家里的网络也能使用');
     } catch (_) {}
@@ -418,6 +430,8 @@ class AppState extends ChangeNotifier {
     if (a is RelayBackend) a.removeListener(notifyListeners);
     a?.close();
     api = null;
+    _lanRelay?.close();
+    _lanRelay = null;
     user = null;
     device = null;
     info = null;
